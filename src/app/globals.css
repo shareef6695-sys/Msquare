@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 214, 219, 220;
+  --background-end-rgb: 255, 255, 255;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: #ffffff;
+}
+
+@layer base {
+  h1 { @apply text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight; }
+  h2 { @apply text-3xl md:text-4xl font-bold tracking-tight; }
+  h3 { @apply text-xl md:text-2xl font-bold; }
+  p { @apply leading-relaxed; }
+}
+
+@layer components {
+  .section-padding { @apply py-20 md:py-32; }
+  .container-max { @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8; }
+}
