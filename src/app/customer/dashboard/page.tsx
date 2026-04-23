@@ -1,7 +1,7 @@
 import React from 'react';
 import { CustomerLayout } from '@/features/customer/CustomerLayout';
 import { Card, CardContent } from '@/components/ui/Card';
-import { ShoppingBag, Package, MapPin, Clock } from 'lucide-react';
+import { ShoppingBag, Package, MapPin, Clock, ChevronRight } from 'lucide-react';
 
 export default function CustomerDashboardPage() {
   return (

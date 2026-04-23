@@ -43,7 +43,7 @@ export default function CustomerLoginPage() {
 
       <div className="mt-6 text-center">
         <p className="text-sm text-gray-600">
-          Don't have an account?{' '}
+          Don’t have an account?{' '}
           <Link href="/register?role=customer" className="font-medium text-primary-600 hover:text-primary-500">
             Register now
           </Link>

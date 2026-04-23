@@ -56,7 +56,7 @@ export default function CartPage() {
                   <ShoppingBag className="w-8 h-8 text-gray-400" />
                 </div>
                 <h3 className="text-xl font-bold mb-2">Your cart is empty</h3>
-                <p className="text-gray-500 mb-8">Looks like you haven't added anything to your cart yet.</p>
+                <p className="text-gray-500 mb-8">Looks like you haven’t added anything to your cart yet.</p>
                 <Link href="/marketplace">
                   <Button>Start Shopping</Button>
                 </Link>
@@ -97,7 +97,7 @@ export default function CartPage() {
                   </Button>
                 </Link>
                 <p className="mt-6 text-xs text-gray-400 text-center leading-relaxed">
-                  By proceeding, you agree to MSquare's Terms of Service and Privacy Policy.
+                  By proceeding, you agree to MSquare’s Terms of Service and Privacy Policy.
                 </p>
               </CardContent>
             </Card>

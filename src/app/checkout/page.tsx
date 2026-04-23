@@ -44,7 +44,7 @@ export default function CheckoutPage() {
           <h1 className="text-3xl font-black text-gray-900 mb-4">Order Confirmed!</h1>
           <p className="text-gray-500 mb-10 text-lg">
             Your order <span className="font-bold text-gray-900">#ORD-9824</span> has been placed successfully. 
-            We've sent a confirmation email to your registered address.
+            We’ve sent a confirmation email to your registered address.
           </p>
           <div className="space-y-4">
             <a href="/customer/orders" className="block">

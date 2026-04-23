@@ -16,7 +16,7 @@ export const Footer = () => {
               <span className="text-2xl font-bold text-white">MSquare</span>
             </Link>
             <p className="text-gray-400 leading-relaxed">
-              The world's leading B2B/B2C marketplace for industrial equipment, fashion, electronics, and more.
+              The world’s leading B2B/B2C marketplace for industrial equipment, fashion, electronics, and more.
             </p>
             <div className="flex gap-4">
               <a href="#" className="hover:text-primary-500 transition-colors"><Facebook className="w-5 h-5" /></a>
