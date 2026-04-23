@@ -3,7 +3,7 @@ import { Features } from "@/features/landing/Features";
 import { Solutions } from "@/features/landing/Solutions";
 import { Button } from "@/components/ui/Button";
 import Link from "next/link";
-import { GET_STARTED_URL } from "@/constants/links";
+import { CUSTOMER_LOGIN_URL, GET_STARTED_URL, MERCHANT_LOGIN_URL } from "@/constants/links";
 
 export default function LandingPage() {
   return (
@@ -72,11 +72,23 @@ export default function LandingPage() {
           <p className="text-primary-100 text-xl mb-12 max-w-2xl mx-auto">
             Join over 10,000+ businesses already growing with MSquare.
           </p>
-          <Link href={GET_STARTED_URL}>
-            <Button size="lg" variant="secondary" className="px-12 py-4 text-primary-600 hover:bg-white">
-              Get Started for Free
-            </Button>
-          </Link>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <Link href={MERCHANT_LOGIN_URL} className="w-full sm:w-auto">
+              <Button size="lg" variant="secondary" className="w-full sm:w-auto px-8 py-4 text-primary-700 hover:bg-white">
+                Merchant Login
+              </Button>
+            </Link>
+            <Link href={CUSTOMER_LOGIN_URL} className="w-full sm:w-auto">
+              <Button size="lg" variant="secondary" className="w-full sm:w-auto px-8 py-4 text-primary-700 hover:bg-white">
+                Customer Login
+              </Button>
+            </Link>
+            <Link href={GET_STARTED_URL} className="w-full sm:w-auto">
+              <Button size="lg" className="w-full sm:w-auto px-10 py-4 bg-gray-900 hover:bg-black text-white">
+                Get Started
+              </Button>
+            </Link>
+          </div>
         </div>
       </section>
     </div>

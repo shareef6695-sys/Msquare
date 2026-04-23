@@ -10,17 +10,29 @@
 
 body {
   color: rgb(var(--foreground-rgb));
-  background: #ffffff;
+  background:
+    radial-gradient(1200px 600px at 20% 10%, rgba(14, 165, 233, 0.10), transparent 60%),
+    radial-gradient(900px 500px at 80% 20%, rgba(59, 130, 246, 0.08), transparent 55%),
+    #ffffff;
+  text-rendering: optimizeLegibility;
 }
 
 @layer base {
-  h1 { @apply text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight; }
-  h2 { @apply text-3xl md:text-4xl font-bold tracking-tight; }
-  h3 { @apply text-xl md:text-2xl font-bold; }
+  html { @apply scroll-smooth; }
+  ::selection { @apply bg-primary-200 text-gray-900; }
+  h1 { @apply text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.05]; }
+  h2 { @apply text-3xl md:text-4xl font-bold tracking-tight leading-[1.15]; }
+  h3 { @apply text-xl md:text-2xl font-bold tracking-tight; }
   p { @apply leading-relaxed; }
 }
 
 @layer components {
   .section-padding { @apply py-20 md:py-32; }
   .container-max { @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8; }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  .text-balance { text-wrap: balance; }
 }

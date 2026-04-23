@@ -20,13 +20,19 @@ const stats = [
 export default function MerchantDashboardPage() {
   return (
     <MerchantLayout>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard Overview</h1>
-        <p className="text-gray-500">Welcome back, here’s what’s happening today.</p>
+      <div className="mb-8 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight text-gray-900">Dashboard Overview</h1>
+          <p className="text-gray-500">Welcome back, here’s what’s happening today.</p>
+        </div>
+        <div className="inline-flex items-center gap-2 rounded-full border border-gray-200/60 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm shadow-gray-900/5">
+          <span className="h-2 w-2 rounded-full bg-green-500" />
+          Live store metrics
+        </div>
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
         {stats.map((stat) => (
           <Card key={stat.label}>
             <CardContent className="p-6">
@@ -42,7 +48,7 @@ export default function MerchantDashboardPage() {
                 </div>
               </div>
               <h3 className="text-gray-500 text-sm font-medium">{stat.label}</h3>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{stat.value}</p>
+              <p className="text-2xl font-black text-gray-900 mt-1">{stat.value}</p>
             </CardContent>
           </Card>
         ))}

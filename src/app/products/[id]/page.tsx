@@ -1,4 +1,5 @@
 import React from 'react';
+import Image from 'next/image';
 import { MOCK_PRODUCTS } from '@/data/mockProducts';
 import { Button } from '@/components/ui/Button';
 import { Star, MapPin, ShieldCheck, Truck, RefreshCcw, ShoppingCart } from 'lucide-react';
@@ -13,17 +14,20 @@ export default function ProductDetailsPage({ params }: { params: { id: string } 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 mb-16">
           {/* Image Gallery */}
           <div className="space-y-4">
-            <div className="aspect-square rounded-2xl overflow-hidden bg-gray-100 border border-gray-100">
-              <img 
-                src={product.images[0]} 
-                alt={product.name} 
-                className="w-full h-full object-cover"
+            <div className="relative aspect-square rounded-3xl overflow-hidden bg-gray-100 border border-gray-200/60">
+              <Image
+                src={product.images[0]}
+                alt={product.name}
+                fill
+                className="object-cover"
+                priority
+                sizes="(max-width: 1024px) 100vw, 600px"
               />
             </div>
             <div className="grid grid-cols-4 gap-4">
               {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="aspect-square rounded-xl overflow-hidden bg-gray-100 border border-gray-100 cursor-pointer hover:opacity-75 transition-opacity">
-                  <img src={product.images[0]} alt="" className="w-full h-full object-cover" />
+                <div key={i} className="relative aspect-square rounded-2xl overflow-hidden bg-gray-100 border border-gray-200/60 cursor-pointer hover:opacity-90 transition-opacity">
+                  <Image src={product.images[0]} alt="" fill className="object-cover" sizes="150px" />
                 </div>
               ))}
             </div>
