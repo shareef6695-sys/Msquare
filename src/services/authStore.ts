@@ -1,6 +1,8 @@
 "use client";
 
 import type { UserRole } from "@/types";
+import { getMerchantById, upsertMerchantFromRegistration } from "@/services/adminService";
+import type { MerchantStatus, MockMerchant, RiskLevel } from "@/data/mockMerchants";
 
 export type AuthRole = Exclude<UserRole, "ADMIN">;
 
@@ -10,8 +12,12 @@ export type MerchantRegistrationInput = {
   email: string;
   phone: string;
   password: string;
+  country: string;
+  city: string;
   businessType: string;
   commercialRegistrationNumber: string;
+  vatNumber: string;
+  iban: string;
   bankDetails: string;
   storeName: string;
   storeSlug: string;
@@ -36,7 +42,23 @@ export type AuthUser = {
   storeName?: string;
 };
 
-type StoredMerchant = MerchantRegistrationInput & { id: string; passwordHash: string };
+type StoredMerchant = MerchantRegistrationInput & {
+  id: string;
+  passwordHash: string;
+  status: MerchantStatus;
+  rejectionReason?: string;
+  notes?: string;
+  uploadedDocuments: Array<{ name: string; url: string }>;
+  riskChecks: {
+    emailVerified: boolean;
+    phoneVerified: boolean;
+    crUploaded: boolean;
+    bankDetailsProvided: boolean;
+    documentsUploaded: boolean;
+    riskLevel: RiskLevel;
+  };
+  createdAt: string;
+};
 type StoredCustomer = CustomerRegistrationInput & { id: string; passwordHash: string };
 
 type Session = {
@@ -150,7 +172,11 @@ export const registerMerchant = async (input: MerchantRegistrationInput) => {
   if (!input.businessName.trim()) throw new Error("Business name is required.");
   if (!input.ownerName.trim()) throw new Error("Owner name is required.");
   if (!input.phone.trim()) throw new Error("Phone is required.");
+  if (!input.country.trim()) throw new Error("Country is required.");
+  if (!input.city.trim()) throw new Error("City is required.");
   if (!input.storeName.trim()) throw new Error("Store name is required.");
+  if (!input.vatNumber.trim()) throw new Error("VAT number is required.");
+  if (!input.iban.trim()) throw new Error("IBAN is required.");
 
   const storeSlug = normalizeSlug(input.storeSlug || input.storeName);
   if (!storeSlug) throw new Error("Store slug is required.");
@@ -166,21 +192,55 @@ export const registerMerchant = async (input: MerchantRegistrationInput) => {
 
   const id = `m_${Math.random().toString(16).slice(2, 10)}`;
   const passwordHash = await hashPassword(input.password);
-  const stored: StoredMerchant = { ...input, email, storeSlug, id, passwordHash };
+  const createdAt = new Date().toISOString().slice(0, 10);
+  const uploadedDocuments = input.documentFileName
+    ? [{ name: input.documentFileName, url: `/mock/uploads/${id}/${encodeURIComponent(input.documentFileName)}` }]
+    : [];
+  const stored: StoredMerchant = {
+    ...input,
+    email,
+    storeSlug,
+    id,
+    passwordHash,
+    status: "pending_verification",
+    uploadedDocuments,
+    riskChecks: {
+      emailVerified: false,
+      phoneVerified: false,
+      crUploaded: Boolean(input.commercialRegistrationNumber.trim()) && uploadedDocuments.length > 0,
+      bankDetailsProvided: Boolean(input.bankDetails.trim()),
+      documentsUploaded: uploadedDocuments.length > 0,
+      riskLevel: (uploadedDocuments.length > 0 ? "Medium" : "High") as RiskLevel,
+    },
+    createdAt,
+  };
   users.merchants = [stored, ...users.merchants];
   saveUsers(users);
 
-  const session = createSessionForUser({
+  const merchantForAdmin: MockMerchant = {
     id,
-    role: "MERCHANT",
+    businessName: input.businessName.trim(),
+    ownerName: input.ownerName.trim(),
     email,
-    name: input.ownerName.trim(),
     phone: input.phone.trim(),
+    country: input.country.trim(),
+    city: input.city.trim(),
+    businessType: input.businessType.trim(),
+    commercialRegistrationNumber: input.commercialRegistrationNumber.trim(),
+    vatNumber: input.vatNumber.trim(),
+    iban: input.iban.trim(),
+    bankDetails: input.bankDetails.trim(),
     storeName: input.storeName.trim(),
     storeSlug,
-  });
+    uploadedDocuments,
+    status: "pending_verification",
+    notes: "",
+    riskChecks: stored.riskChecks,
+    createdAt,
+  };
+  upsertMerchantFromRegistration(merchantForAdmin);
 
-  return { session };
+  return { id };
 };
 
 export const registerCustomer = async (input: CustomerRegistrationInput) => {
@@ -225,6 +285,15 @@ export const loginWithEmail = async (input: { email: string; password: string; r
     if (!merchant) throw new Error("No merchant account found for this email.");
     const ok = await verifyPassword(input.password, merchant.passwordHash);
     if (!ok) throw new Error("Incorrect password.");
+
+    const verification = getMerchantById(merchant.id);
+    const status = (verification?.status ?? (merchant as any).status ?? "pending_verification") as MerchantStatus;
+    if (status !== "approved") {
+      const reason = verification?.rejectionReason ?? (merchant as any).rejectionReason;
+      if (status === "rejected") throw new Error(reason ? `Rejected: ${reason}` : "Rejected: Contact support.");
+      if (status === "suspended") throw new Error("Suspended: Contact support.");
+      throw new Error("Pending Verification: Your merchant account is under review.");
+    }
 
     const session = createSessionForUser({
       id: merchant.id,

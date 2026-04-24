@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { AdminLayout } from "@/features/admin/AdminLayout";
+import { AdminLayout } from "@/components/admin/AdminLayout";
 import { Card, CardContent } from "@/components/ui/Card";
 import { seedOrdersIfEmpty } from "@/services/orderStore";
 import { Order } from "@/types";
@@ -157,4 +157,3 @@ export default function AdminOrdersPage() {
     </AdminLayout>
   );
 }
-

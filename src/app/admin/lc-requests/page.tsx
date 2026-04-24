@@ -7,11 +7,25 @@ import { seedOrdersIfEmpty } from "@/services/orderStore";
 import { Order } from "@/types";
 import { FileText, ShieldCheck } from "lucide-react";
 
-type LcUiState = Record<string, { uploaded: boolean; status: string; lastAction?: string; fileName?: string; invoiceUrl?: string }>;
+type LcUiState = Record<
+  string,
+  { uploaded: boolean; status: string; lastAction?: string; fileName?: string; invoiceUrl?: string }
+>;
 
-export default function AdminLcTransactionsPage() {
+type LcFilter = "all" | "under_review" | "accepted" | "settled";
+
+const normalizeLcStatus = (order: Order, ui?: LcUiState[string]) => {
+  return (order.lcStatus ?? ui?.status ?? "DRAFT").toString().toUpperCase();
+};
+
+const isUnderReview = (status: string) => {
+  return ["DRAFT", "SUBMITTED", "BANK_REVIEW", "UNDER_REVIEW"].includes(status);
+};
+
+export default function AdminLcRequestsPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [lcState, setLcState] = useState<LcUiState>({});
+  const [filter, setFilter] = useState<LcFilter>("under_review");
 
   useEffect(() => {
     setOrders(seedOrdersIfEmpty());
@@ -33,23 +47,65 @@ export default function AdminLcTransactionsPage() {
       .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
   }, [orders]);
 
+  const filtered = useMemo(() => {
+    return lcOrders.filter((o) => {
+      const status = normalizeLcStatus(o, lcState[o.id]);
+      if (filter === "all") return true;
+      if (filter === "accepted") return ["ACCEPTED", "APPROVED"].includes(status);
+      if (filter === "settled") return ["SETTLED", "PAID"].includes(status);
+      return isUnderReview(status);
+    });
+  }, [filter, lcOrders, lcState]);
+
+  const counts = useMemo(() => {
+    const all = lcOrders.length;
+    const under = lcOrders.filter((o) => isUnderReview(normalizeLcStatus(o, lcState[o.id]))).length;
+    const accepted = lcOrders.filter((o) => ["ACCEPTED", "APPROVED"].includes(normalizeLcStatus(o, lcState[o.id]))).length;
+    const settled = lcOrders.filter((o) => ["SETTLED", "PAID"].includes(normalizeLcStatus(o, lcState[o.id]))).length;
+    return { all, under, accepted, settled };
+  }, [lcOrders, lcState]);
+
   return (
     <AdminLayout>
-      <div className="mb-8">
-        <h1 className="text-2xl font-black tracking-tight text-gray-900">LC transactions</h1>
-        <p className="text-gray-500">Track LC requests, documents, and bank status per order.</p>
+      <div className="mb-8 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight text-gray-900">LC requests</h1>
+          <p className="text-gray-500">Review LC submissions, documents, and bank milestone status.</p>
+        </div>
+        <div className="inline-flex items-center gap-2 rounded-full border border-gray-200/60 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm shadow-gray-900/5">
+          <ShieldCheck className="w-4 h-4 text-primary-700" />
+          Bank review queue
+        </div>
       </div>
 
-      {lcOrders.length === 0 ? (
+      <div className="mb-6 flex flex-wrap gap-2">
+        {[
+          { key: "under_review" as const, label: `Under review (${counts.under})` },
+          { key: "accepted" as const, label: `Accepted (${counts.accepted})` },
+          { key: "settled" as const, label: `Settled (${counts.settled})` },
+          { key: "all" as const, label: `All (${counts.all})` },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            className={`rounded-full border px-4 py-2 text-sm font-semibold transition-colors ${
+              filter === tab.key ? "border-primary-200/70 bg-primary-50 text-primary-800" : "border-gray-200/60 bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+            onClick={() => setFilter(tab.key)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
         <Card>
-          <CardContent className="p-10 text-center text-sm text-gray-500">No LC orders found.</CardContent>
+          <CardContent className="p-10 text-center text-sm text-gray-500">No LC requests match this filter.</CardContent>
         </Card>
       ) : (
         <div className="space-y-6">
-          {lcOrders.map((order) => {
+          {filtered.map((order) => {
             const ui = lcState[order.id];
-            const status = order.lcStatus ?? ui?.status ?? "DRAFT";
-
+            const status = normalizeLcStatus(order, ui);
             return (
               <Card key={order.id} className="overflow-hidden">
                 <div className="p-6 border-b border-gray-100/60 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -72,7 +128,7 @@ export default function AdminLcTransactionsPage() {
                   </div>
                   <div className="inline-flex items-center gap-2 rounded-full border border-gray-200/60 bg-white px-3 py-1.5 text-xs font-bold text-gray-700">
                     <ShieldCheck className="w-4 h-4 text-primary-700" />
-                    Bank workflow
+                    LC workflow
                   </div>
                 </div>
 
@@ -82,11 +138,11 @@ export default function AdminLcTransactionsPage() {
                       <div className="text-sm font-black text-gray-900 mb-3">Documents</div>
                       <div className="space-y-3">
                         <div className="rounded-2xl border border-gray-200/60 bg-white px-4 py-3">
-                          <div className="text-sm font-semibold text-gray-900">Uploaded file</div>
+                          <div className="text-sm font-semibold text-gray-900">Uploaded LC file</div>
                           <div className="text-xs text-gray-500 mt-1">{ui?.fileName ?? "None"}</div>
                         </div>
                         <div className="rounded-2xl border border-gray-200/60 bg-white px-4 py-3">
-                          <div className="text-sm font-semibold text-gray-900">Invoice</div>
+                          <div className="text-sm font-semibold text-gray-900">Invoice link</div>
                           <div className="text-xs text-gray-500 mt-1">
                             {ui?.invoiceUrl ? (
                               <a
@@ -111,7 +167,7 @@ export default function AdminLcTransactionsPage() {
                           <FileText className="w-5 h-5" />
                         </div>
                         <div className="min-w-0">
-                          <div className="text-sm font-black text-gray-900">LC status</div>
+                          <div className="text-sm font-black text-gray-900">Bank status</div>
                           <div className="text-sm font-semibold text-gray-800 mt-1">{status}</div>
                           {ui?.lastAction && <div className="text-xs text-gray-500 mt-1">Last action: {ui.lastAction}</div>}
                         </div>
@@ -128,3 +184,4 @@ export default function AdminLcTransactionsPage() {
     </AdminLayout>
   );
 }
+

@@ -2,21 +2,23 @@
 
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { AuthLayout } from "@/components/layout/AuthLayout";
 import { Button } from "@/components/ui/Button";
 import { registerMerchant } from "@/services/authStore";
 
 export default function MerchantRegisterPage() {
-  const router = useRouter();
   const [form, setForm] = useState({
     businessName: "",
     ownerName: "",
     email: "",
     phone: "",
     password: "",
+    country: "Saudi Arabia",
+    city: "",
     businessType: "",
     commercialRegistrationNumber: "",
+    vatNumber: "",
+    iban: "",
     bankDetails: "",
     storeName: "",
     storeSlug: "",
@@ -24,6 +26,7 @@ export default function MerchantRegisterPage() {
   });
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
 
   const slugHint = useMemo(() => {
     const raw = form.storeSlug || form.storeName;
@@ -37,6 +40,24 @@ export default function MerchantRegisterPage() {
 
   return (
     <AuthLayout title="Merchant Registration" subtitle="Create your supplier account and start selling on MSquare">
+      {submitted ? (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-primary-200/70 bg-primary-50 px-5 py-4 text-sm text-primary-800">
+            <div className="font-black">Registration submitted</div>
+            <div className="mt-1 text-primary-700">
+              Your account status is <span className="font-black">Pending Verification</span>. An MSquare admin will review your business details and documents.
+            </div>
+          </div>
+          <Link href="/merchant-login">
+            <Button className="w-full">Go to Merchant Login</Button>
+          </Link>
+          <Link href="/">
+            <Button variant="outline" className="w-full">
+              Back to Home
+            </Button>
+          </Link>
+        </div>
+      ) : (
       <form
         className="space-y-5"
         onSubmit={async (e) => {
@@ -50,14 +71,18 @@ export default function MerchantRegisterPage() {
               email: form.email,
               phone: form.phone,
               password: form.password,
+              country: form.country,
+              city: form.city,
               businessType: form.businessType,
               commercialRegistrationNumber: form.commercialRegistrationNumber,
+              vatNumber: form.vatNumber,
+              iban: form.iban,
               bankDetails: form.bankDetails,
               storeName: form.storeName,
               storeSlug: form.storeSlug || form.storeName,
               documentFileName: form.documentFileName || undefined,
             });
-            router.push("/merchant/dashboard");
+            setSubmitted(true);
           } catch (err) {
             setError(err instanceof Error ? err.message : "Registration failed.");
           } finally {
@@ -113,6 +138,24 @@ export default function MerchantRegisterPage() {
               onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
             />
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Country</label>
+            <input
+              required
+              className="mt-1 block w-full border border-gray-300 rounded-lg shadow-sm py-2 px-3 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+              value={form.country}
+              onChange={(e) => setForm((p) => ({ ...p, country: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">City</label>
+            <input
+              required
+              className="mt-1 block w-full border border-gray-300 rounded-lg shadow-sm py-2 px-3 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+              value={form.city}
+              onChange={(e) => setForm((p) => ({ ...p, city: e.target.value }))}
+            />
+          </div>
           <div className="sm:col-span-2">
             <label className="block text-sm font-medium text-gray-700">Password</label>
             <input
@@ -132,6 +175,25 @@ export default function MerchantRegisterPage() {
               className="mt-1 block w-full border border-gray-300 rounded-lg shadow-sm py-2 px-3 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
               value={form.commercialRegistrationNumber}
               onChange={(e) => setForm((p) => ({ ...p, commercialRegistrationNumber: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">VAT number</label>
+            <input
+              required
+              className="mt-1 block w-full border border-gray-300 rounded-lg shadow-sm py-2 px-3 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+              value={form.vatNumber}
+              onChange={(e) => setForm((p) => ({ ...p, vatNumber: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">IBAN</label>
+            <input
+              required
+              className="mt-1 block w-full border border-gray-300 rounded-lg shadow-sm py-2 px-3 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+              value={form.iban}
+              onChange={(e) => setForm((p) => ({ ...p, iban: e.target.value }))}
+              placeholder="SA..."
             />
           </div>
           <div className="sm:col-span-2">
@@ -198,6 +260,7 @@ export default function MerchantRegisterPage() {
           </Link>
         </div>
       </form>
+      )}
     </AuthLayout>
   );
 }
