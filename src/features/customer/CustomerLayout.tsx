@@ -10,7 +10,10 @@ import {
   LogOut,
   ChevronRight,
   Bell,
-  AlertTriangle
+  AlertTriangle,
+  LifeBuoy,
+  FileText,
+  Bookmark
 } from 'lucide-react';
 import { loadSession, logout } from "@/services/authStore";
 import { Button } from '@/components/ui/Button';
@@ -46,7 +49,11 @@ const isExpiredInGrace = (
 const customerMenuItems = [
   { icon: <User className="w-5 h-5" />, label: 'Dashboard', href: '/customer/dashboard' },
   { icon: <ShoppingBag className="w-5 h-5" />, label: 'Orders', href: '/customer/orders' },
+  { icon: <FileText className="w-5 h-5" />, label: 'Invoices', href: '/customer/invoices' },
+  { icon: <FileText className="w-5 h-5" />, label: 'Documents', href: '/customer/documents' },
+  { icon: <Bookmark className="w-5 h-5" />, label: 'Saved merchants', href: '/customer/saved-merchants' },
   { icon: <Bell className="w-5 h-5" />, label: 'Notifications', href: '/customer/notifications' },
+  { icon: <LifeBuoy className="w-5 h-5" />, label: 'Support', href: '/customer/support' },
   { icon: <MapPin className="w-5 h-5" />, label: 'Addresses', href: '/customer/addresses' },
   { icon: <User className="w-5 h-5" />, label: 'Profile', href: '/customer/profile' },
 ];
@@ -300,9 +307,12 @@ export const CustomerLayout = ({ children }: { children: React.ReactNode }) => {
             <div className="bg-gradient-to-br from-primary-700 to-primary-600 p-6 rounded-3xl text-white shadow-lg shadow-primary-600/20">
               <h4 className="font-black mb-2">Need Help?</h4>
               <p className="text-sm text-primary-100 mb-4">Our support team is available 24/7 to assist you.</p>
-              <button className="w-full bg-white text-primary-700 py-2.5 rounded-2xl text-sm font-bold hover:bg-primary-50 transition-colors">
+              <Link
+                href="/customer/support"
+                className="block w-full bg-white text-primary-700 py-2.5 rounded-2xl text-sm font-bold hover:bg-primary-50 transition-colors text-center"
+              >
                 Contact Support
-              </button>
+              </Link>
             </div>
           </aside>
 
