@@ -5,12 +5,15 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LogOut, Menu, Search, ShieldCheck } from "lucide-react";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
+import { Button } from "@/components/ui/Button";
+import { Card, CardContent } from "@/components/ui/Card";
 import { logoutAdmin, requireAdmin, seedAdminMerchants } from "@/services/adminService";
 
 export const AdminLayout = ({ children }: { children: React.ReactNode }) => {
   const pathname = usePathname();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false);
 
   useEffect(() => {
     seedAdminMerchants();
@@ -25,8 +28,67 @@ export const AdminLayout = ({ children }: { children: React.ReactNode }) => {
     setSidebarOpen(false);
   }, [pathname]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const gate = requireAdmin();
+    if (!gate.ok) return;
+
+    const pushGuardState = () => {
+      try {
+        window.history.pushState({ msquareAdminGuard: true }, "", window.location.href);
+      } catch {}
+    };
+
+    pushGuardState();
+
+    const onPopState = () => {
+      setConfirmLogoutOpen(true);
+      pushGuardState();
+    };
+
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [pathname]);
+
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
+      {confirmLogoutOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm"
+            onClick={() => setConfirmLogoutOpen(false)}
+          />
+          <Card className="relative w-full max-w-md overflow-hidden">
+            <CardContent className="p-6">
+              <div className="text-lg font-black text-gray-900">Logout</div>
+              <div className="mt-2 text-sm text-gray-600">
+                Are you sure you want to logout from the Admin Panel?
+              </div>
+              <div className="mt-6 grid grid-cols-2 gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setConfirmLogoutOpen(false);
+                  }}
+                >
+                  No
+                </Button>
+                <Button
+                  onClick={() => {
+                    logoutAdmin();
+                    setConfirmLogoutOpen(false);
+                    router.replace("/admin/login");
+                  }}
+                >
+                  Yes
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {sidebarOpen && (
         <button
           className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-30 lg:hidden"
@@ -57,8 +119,7 @@ export const AdminLayout = ({ children }: { children: React.ReactNode }) => {
           <button
             className="flex items-center gap-3 px-4 py-3 w-full text-sm font-semibold text-gray-700 hover:bg-red-50 hover:text-red-700 rounded-2xl transition-colors"
             onClick={() => {
-              logoutAdmin();
-              router.replace("/admin/login");
+              setConfirmLogoutOpen(true);
             }}
           >
             <LogOut className="w-5 h-5" />
@@ -102,4 +163,3 @@ export const AdminLayout = ({ children }: { children: React.ReactNode }) => {
     </div>
   );
 };
-
