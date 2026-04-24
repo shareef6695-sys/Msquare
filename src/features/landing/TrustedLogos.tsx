@@ -20,7 +20,8 @@ export const TrustedLogos = () => {
   return (
     <div className="flex flex-wrap justify-center items-center gap-4 sm:gap-6 md:gap-10 opacity-70 grayscale hover:grayscale-0 transition-all duration-500">
       {items.map((item) => {
-        const isMissing = !item.src || Boolean(missing[item.name]);
+        const src = item.src;
+        const isMissing = !src || Boolean(missing[item.name]);
         return (
           <div
             key={item.name}
@@ -33,7 +34,7 @@ export const TrustedLogos = () => {
             ) : (
               <div className="relative h-8 w-full">
                 <Image
-                  src={item.src}
+                  src={src}
                   alt={item.name}
                   fill
                   sizes="180px"
@@ -48,4 +49,3 @@ export const TrustedLogos = () => {
     </div>
   );
 };
-
