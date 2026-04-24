@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { seedOrdersIfEmpty } from "@/services/orderStore";
 import { Order } from "@/types";
 import { buildMockAdminStats } from "@/data/mockAdminStats";
-import { listMerchants } from "@/services/adminService";
+import { listCustomers, listMerchants } from "@/services/adminService";
 import { Banknote, FileText, Gavel, ShieldCheck, Store, Users } from "lucide-react";
 
 const formatMoney = (amount: number) => {
@@ -23,6 +23,7 @@ export default function AdminDashboardPage() {
 
   const summary = useMemo(() => {
     const merchants = listMerchants({ status: "all" });
+    const customers = listCustomers({ status: "all" });
     const lcOrders = orders.filter((o) => o.paymentType === "lc" || o.paymentMethod === "LC");
 
     let disputes = 0;
@@ -35,6 +36,7 @@ export default function AdminDashboardPage() {
 
     return buildMockAdminStats({
       merchants,
+      customers,
       orders,
       pendingDisputes: disputes,
       lcRequestsUnderReview: lcUnderReview,
@@ -104,8 +106,8 @@ export default function AdminDashboardPage() {
         {[
           { label: "Insurance claims", value: String(summary.insuranceClaims), icon: <ShieldCheck className="w-5 h-5" />, href: "/admin/orders" },
           { label: "Pending disputes", value: String(summary.pendingDisputes), icon: <Gavel className="w-5 h-5" />, href: "/admin/disputes" },
-          { label: "Payments volume", value: formatMoney(summary.totalGmv), icon: <Banknote className="w-5 h-5" />, href: "/admin/payments" },
-          { label: "All merchants", value: String(summary.totalMerchants), icon: <Users className="w-5 h-5" />, href: "/admin/merchants" },
+          { label: "Total customers", value: String(summary.totalCustomers), icon: <Users className="w-5 h-5" />, href: "/admin/customers" },
+          { label: "Suspended customers", value: String(summary.suspendedCustomers), icon: <Gavel className="w-5 h-5" />, href: "/admin/customers" },
         ].map((stat) => (
           <Link key={stat.label} href={stat.href}>
             <Card className="hover:shadow-sm transition-all">
@@ -131,6 +133,7 @@ export default function AdminDashboardPage() {
           <CardContent className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
             {[
               { title: "All merchants", desc: "View verified suppliers and performance.", icon: <Users className="w-5 h-5" />, href: "/admin/merchants" },
+              { title: "Customers", desc: "Review customer accounts and suspensions.", icon: <Users className="w-5 h-5" />, href: "/admin/customers" },
               { title: "All orders", desc: "Audit trade assurance order lifecycle.", icon: <ShieldCheck className="w-5 h-5" />, href: "/admin/orders" },
               { title: "Disputes", desc: "Review buyer disputes and outcomes.", icon: <Gavel className="w-5 h-5" />, href: "/admin/disputes" },
               { title: "LC requests", desc: "Track LC requests, docs, and status.", icon: <FileText className="w-5 h-5" />, href: "/admin/lc-requests" },

@@ -1,11 +1,11 @@
  "use client";
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AuthLayout } from '@/components/layout/AuthLayout';
 import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
 import { useRouter } from "next/navigation";
-import { loginWithEmail } from "@/services/authStore";
+import { loginWithEmail, seedDemoAccountsIfMissing } from "@/services/authStore";
 
 export default function CustomerLoginPage() {
   const router = useRouter();
@@ -13,6 +13,10 @@ export default function CustomerLoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    seedDemoAccountsIfMissing();
+  }, []);
 
   return (
     <AuthLayout 

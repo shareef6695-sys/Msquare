@@ -3,11 +3,12 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Banknote, FileText, Gavel, LayoutDashboard, Store, ShieldCheck } from "lucide-react";
+import { Banknote, FileText, Gavel, LayoutDashboard, Store, ShieldCheck, Users } from "lucide-react";
 
 const navItems = [
   { label: "Dashboard", href: "/admin/dashboard", icon: <LayoutDashboard className="w-5 h-5" /> },
   { label: "Merchants", href: "/admin/merchants", icon: <Store className="w-5 h-5" /> },
+  { label: "Customers", href: "/admin/customers", icon: <Users className="w-5 h-5" /> },
   { label: "Orders", href: "/admin/orders", icon: <ShieldCheck className="w-5 h-5" /> },
   { label: "Payments", href: "/admin/payments", icon: <Banknote className="w-5 h-5" /> },
   { label: "Disputes", href: "/admin/disputes", icon: <Gavel className="w-5 h-5" /> },

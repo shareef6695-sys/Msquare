@@ -7,7 +7,7 @@ import { LogOut, Menu, Search, ShieldCheck } from "lucide-react";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
-import { logoutAdmin, requireAdmin, seedAdminMerchants } from "@/services/adminService";
+import { logoutAdmin, requireAdmin, seedAdminCustomers, seedAdminMerchants } from "@/services/adminService";
 
 export const AdminLayout = ({ children }: { children: React.ReactNode }) => {
   const pathname = usePathname();
@@ -17,6 +17,7 @@ export const AdminLayout = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     seedAdminMerchants();
+    seedAdminCustomers();
   }, []);
 
   useEffect(() => {

@@ -3,14 +3,14 @@ import { Features } from "@/features/landing/Features";
 import { Solutions } from "@/features/landing/Solutions";
 import { Button } from "@/components/ui/Button";
 import Link from "next/link";
-import { CheckCircle2 } from "lucide-react";
+import { Banknote, CheckCircle2, CreditCard, PackageCheck, ShieldCheck, ShoppingCart, Truck } from "lucide-react";
 import { CUSTOMER_LOGIN_URL, GET_STARTED_URL, MERCHANT_LOGIN_URL } from "@/constants/links";
 
 const trustHighlights = [
-  "Secure Payment (Escrow)",
-  "LC Payment Accepted",
-  "Shipment Insurance Available",
-  "Buyer Protection",
+  "Escrow payment protection",
+  "Shipment coverage",
+  "LC supported",
+  "Verified merchants",
 ];
 
 export default function LandingPage() {
@@ -35,9 +35,9 @@ export default function LandingPage() {
       <section className="section-padding bg-white">
         <div className="container-max">
           <div className="text-center max-w-2xl mx-auto mb-12">
-            <h2 className="mb-3">Built for Trust at Scale</h2>
+            <h2 className="mb-3">Trade Assurance & Payment Protection</h2>
             <p className="text-gray-600">
-              Every transaction is protected with enterprise-grade safeguards for buyers and sellers.
+              Buy with confidence using MSquare escrow, shipment protection, and LC-enabled workflows. Funds stay protected until delivery is confirmed.
             </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -50,6 +50,42 @@ export default function LandingPage() {
                   <CheckCircle2 className="w-5 h-5" />
                 </div>
                 <div className="text-sm font-semibold text-gray-900">{item}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="section-padding bg-gray-50">
+        <div className="container-max">
+          <div className="text-center max-w-2xl mx-auto mb-12">
+            <h2 className="mb-3">How It Works</h2>
+            <p className="text-gray-600">
+              A streamlined protection flow designed for enterprise procurement and verified suppliers.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[
+              { title: "Place Order", desc: "Submit your order with escrow, LC, or bank transfer.", icon: <ShoppingCart className="w-5 h-5" /> },
+              { title: "Payment Secured", desc: "Funds are protected in escrow or validated via bank LC.", icon: <ShieldCheck className="w-5 h-5" /> },
+              { title: "Order Shipped", desc: "Supplier ships and shares documents & tracking.", icon: <Truck className="w-5 h-5" /> },
+              { title: "Payment Released", desc: "Release happens after delivery confirmation.", icon: <Banknote className="w-5 h-5" /> },
+            ].map((step, idx) => (
+              <div key={step.title} className="rounded-3xl border border-gray-200/60 bg-white p-6 shadow-sm shadow-gray-900/5">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-primary-50 border border-primary-200/60 flex items-center justify-center text-primary-700">
+                    {step.icon}
+                  </div>
+                  <div className="text-xs font-black text-gray-400">0{idx + 1}</div>
+                </div>
+                <div className="mt-5 text-lg font-black text-gray-900">{step.title}</div>
+                <div className="mt-2 text-sm text-gray-600">{step.desc}</div>
+                <div className="mt-4 h-px bg-gray-100" />
+                <div className="mt-4 flex items-center gap-2 text-xs font-semibold text-gray-500">
+                  {idx === 0 ? <CreditCard className="w-4 h-4" /> : idx === 1 ? <ShieldCheck className="w-4 h-4" /> : idx === 2 ? <PackageCheck className="w-4 h-4" /> : <Banknote className="w-4 h-4" />}
+                  Trade Assurance
+                </div>
               </div>
             ))}
           </div>

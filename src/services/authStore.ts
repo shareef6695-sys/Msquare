@@ -1,7 +1,14 @@
 "use client";
 
 import type { UserRole } from "@/types";
-import { getMerchantById, upsertMerchantFromRegistration } from "@/services/adminService";
+import {
+  getCustomerById,
+  getMerchantById,
+  upsertCustomerFromRegistration,
+  upsertMerchantFromRegistration,
+  type CustomerStatus,
+  type MockCustomer,
+} from "@/services/adminService";
 import type { MerchantStatus, MockMerchant, RiskLevel } from "@/data/mockMerchants";
 
 export type AuthRole = Exclude<UserRole, "ADMIN">;
@@ -22,6 +29,8 @@ export type MerchantRegistrationInput = {
   storeName: string;
   storeSlug: string;
   documentFileName?: string;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
 };
 
 export type CustomerRegistrationInput = {
@@ -30,6 +39,8 @@ export type CustomerRegistrationInput = {
   phone: string;
   password: string;
   address?: string;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
 };
 
 export type AuthUser = {
@@ -59,7 +70,15 @@ type StoredMerchant = MerchantRegistrationInput & {
   };
   createdAt: string;
 };
-type StoredCustomer = CustomerRegistrationInput & { id: string; passwordHash: string };
+type StoredCustomer = CustomerRegistrationInput & {
+  id: string;
+  passwordHash: string;
+  status: CustomerStatus;
+  rejectionReason?: string;
+  notes?: string;
+  riskChecks: { emailVerified: boolean; phoneVerified: boolean; riskLevel: RiskLevel };
+  createdAt: string;
+};
 
 type Session = {
   token: string;
@@ -69,6 +88,8 @@ type Session = {
 
 const USERS_KEY = "msquare.users.v1";
 const SESSION_KEY = "msquare.session.v1";
+const MERCHANT_SIGNUP_KEY = "msquare.signup.merchant.v1";
+const CUSTOMER_SIGNUP_KEY = "msquare.signup.customer.v1";
 
 const isBrowser = () => typeof window !== "undefined";
 
@@ -163,6 +184,297 @@ const createSessionForUser = (user: AuthUser) => {
   return session;
 };
 
+type MerchantSignupDraft = {
+  step: 1 | 2 | 3 | 4;
+  account: { ownerName: string; email: string; phone: string; password: string };
+  emailVerification: { code: string; sent: boolean; verified: boolean };
+  businessProfile?: Omit<
+    MerchantRegistrationInput,
+    "ownerName" | "email" | "phone" | "password" | "emailVerified" | "phoneVerified"
+  >;
+  submitted?: boolean;
+};
+
+type CustomerSignupDraft = {
+  step: 1 | 2 | 3;
+  account: { name: string; email: string; phone: string; password: string; address?: string };
+  emailVerification: { code: string; sent: boolean; verified: boolean };
+  submitted?: boolean;
+};
+
+const loadMerchantDraft = (): MerchantSignupDraft | null => {
+  if (!isBrowser()) return null;
+  return safeJsonParse<MerchantSignupDraft | null>(window.localStorage.getItem(MERCHANT_SIGNUP_KEY), null);
+};
+
+const saveMerchantDraft = (draft: MerchantSignupDraft | null) => {
+  if (!isBrowser()) return;
+  if (!draft) window.localStorage.removeItem(MERCHANT_SIGNUP_KEY);
+  else window.localStorage.setItem(MERCHANT_SIGNUP_KEY, JSON.stringify(draft));
+};
+
+const loadCustomerDraft = (): CustomerSignupDraft | null => {
+  if (!isBrowser()) return null;
+  return safeJsonParse<CustomerSignupDraft | null>(window.localStorage.getItem(CUSTOMER_SIGNUP_KEY), null);
+};
+
+const saveCustomerDraft = (draft: CustomerSignupDraft | null) => {
+  if (!isBrowser()) return;
+  if (!draft) window.localStorage.removeItem(CUSTOMER_SIGNUP_KEY);
+  else window.localStorage.setItem(CUSTOMER_SIGNUP_KEY, JSON.stringify(draft));
+};
+
+export const getMerchantSignupDraftByEmail = (email: string) => {
+  const draft = loadMerchantDraft();
+  if (!draft) return null;
+  if (draft.account.email.toLowerCase() !== email.trim().toLowerCase()) return null;
+  return draft;
+};
+
+export const getCustomerSignupDraftByEmail = (email: string) => {
+  const draft = loadCustomerDraft();
+  if (!draft) return null;
+  if (draft.account.email.toLowerCase() !== email.trim().toLowerCase()) return null;
+  return draft;
+};
+
+export const startMerchantSignup = (input: { ownerName: string; email: string; phone: string; password: string }) => {
+  const email = input.email.trim().toLowerCase();
+  if (!input.ownerName.trim()) throw new Error("Name is required.");
+  if (!validateEmail(email)) throw new Error("Please enter a valid email address.");
+  if (!input.phone.trim()) throw new Error("Phone is required.");
+  if (input.password.trim().length < 8) throw new Error("Password must be at least 8 characters.");
+
+  const draft: MerchantSignupDraft = {
+    step: 2,
+    account: { ownerName: input.ownerName.trim(), email, phone: input.phone.trim(), password: input.password },
+    emailVerification: { code: "123456", sent: true, verified: false },
+  };
+  saveMerchantDraft(draft);
+  return draft;
+};
+
+export const resendMerchantVerificationCode = () => {
+  const draft = loadMerchantDraft();
+  if (!draft) throw new Error("No signup session found.");
+  const next: MerchantSignupDraft = {
+    ...draft,
+    step: 2,
+    emailVerification: { ...draft.emailVerification, sent: true, code: "123456" },
+  };
+  saveMerchantDraft(next);
+  return next;
+};
+
+export const verifyMerchantEmail = (code: string) => {
+  const draft = loadMerchantDraft();
+  if (!draft) throw new Error("No signup session found.");
+  if (!draft.emailVerification.sent) throw new Error("Please send a verification code first.");
+  if (code.trim() !== draft.emailVerification.code) throw new Error("Invalid verification code.");
+  const next: MerchantSignupDraft = {
+    ...draft,
+    step: 3,
+    emailVerification: { ...draft.emailVerification, verified: true },
+  };
+  saveMerchantDraft(next);
+  return next;
+};
+
+export const submitMerchantBusinessProfile = async (
+  profile: Omit<
+    MerchantRegistrationInput,
+    "ownerName" | "email" | "phone" | "password" | "emailVerified" | "phoneVerified"
+  >,
+) => {
+  const draft = loadMerchantDraft();
+  if (!draft) throw new Error("No signup session found.");
+  if (!draft.emailVerification.verified) throw new Error("Email verification required.");
+
+  await registerMerchant({
+    ...profile,
+    ownerName: draft.account.ownerName,
+    email: draft.account.email,
+    phone: draft.account.phone,
+    password: draft.account.password,
+    emailVerified: true,
+    phoneVerified: false,
+  });
+
+  const next: MerchantSignupDraft = { ...draft, step: 4, submitted: true, businessProfile: profile };
+  saveMerchantDraft(next);
+  return next;
+};
+
+export const startCustomerSignup = (input: { name: string; email: string; phone: string; password: string; address?: string }) => {
+  const email = input.email.trim().toLowerCase();
+  if (!input.name.trim()) throw new Error("Name is required.");
+  if (!validateEmail(email)) throw new Error("Please enter a valid email address.");
+  if (!input.phone.trim()) throw new Error("Phone is required.");
+  if (input.password.trim().length < 8) throw new Error("Password must be at least 8 characters.");
+
+  const draft: CustomerSignupDraft = {
+    step: 2,
+    account: { name: input.name.trim(), email, phone: input.phone.trim(), password: input.password, address: input.address?.trim() || undefined },
+    emailVerification: { code: "123456", sent: true, verified: false },
+  };
+  saveCustomerDraft(draft);
+  return draft;
+};
+
+export const resendCustomerVerificationCode = () => {
+  const draft = loadCustomerDraft();
+  if (!draft) throw new Error("No signup session found.");
+  const next: CustomerSignupDraft = {
+    ...draft,
+    step: 2,
+    emailVerification: { ...draft.emailVerification, sent: true, code: "123456" },
+  };
+  saveCustomerDraft(next);
+  return next;
+};
+
+export const verifyCustomerEmailAndCreateAccount = async (code: string) => {
+  const draft = loadCustomerDraft();
+  if (!draft) throw new Error("No signup session found.");
+  if (!draft.emailVerification.sent) throw new Error("Please send a verification code first.");
+  if (code.trim() !== draft.emailVerification.code) throw new Error("Invalid verification code.");
+
+  const next: CustomerSignupDraft = {
+    ...draft,
+    step: 3,
+    emailVerification: { ...draft.emailVerification, verified: true },
+    submitted: true,
+  };
+  saveCustomerDraft(next);
+
+  await registerCustomer({
+    name: draft.account.name,
+    email: draft.account.email,
+    phone: draft.account.phone,
+    password: draft.account.password,
+    address: draft.account.address,
+    emailVerified: true,
+    phoneVerified: false,
+  });
+
+  return next;
+};
+
+export const seedDemoAccountsIfMissing = async () => {
+  if (!isBrowser()) return;
+  const users = loadUsers();
+
+  const demoCustomerEmail = "customer@msquare.demo";
+  const demoMerchantEmail = "merchant@msquare.demo";
+
+  const hasDemoCustomer = users.customers.some((c) => c.email.toLowerCase() === demoCustomerEmail);
+  const hasDemoMerchant = users.merchants.some((m) => m.email.toLowerCase() === demoMerchantEmail);
+
+  if (!hasDemoCustomer) {
+    const id = "c_demo";
+    const passwordHash = await hashPassword("customer1234");
+    const createdAt = "2026-04-01";
+    users.customers = [
+      {
+        id,
+        name: "Demo Buyer",
+        email: demoCustomerEmail,
+        phone: "+966 50 111 2222",
+        password: "",
+        passwordHash,
+        address: "Riyadh, Saudi Arabia",
+        status: "approved",
+        notes: "Seeded demo customer.",
+        riskChecks: { emailVerified: true, phoneVerified: true, riskLevel: "Low" as RiskLevel },
+        createdAt,
+      },
+      ...users.customers,
+    ];
+
+    const customerForAdmin: MockCustomer = {
+      id,
+      name: "Demo Buyer",
+      email: demoCustomerEmail,
+      phone: "+966 50 111 2222",
+      address: "Riyadh, Saudi Arabia",
+      status: "approved",
+      notes: "Seeded demo customer.",
+      riskChecks: { emailVerified: true, phoneVerified: true, riskLevel: "Low" },
+      createdAt,
+    };
+    upsertCustomerFromRegistration(customerForAdmin);
+  }
+
+  if (!hasDemoMerchant) {
+    const id = "m_demo";
+    const passwordHash = await hashPassword("merchant1234");
+    const createdAt = "2026-04-01";
+    const uploadedDocuments = [{ name: "Commercial Registration (CR).pdf", url: "/mock/docs/m_demo-cr.pdf" }];
+    const riskChecks = {
+      emailVerified: true,
+      phoneVerified: true,
+      crUploaded: true,
+      bankDetailsProvided: true,
+      documentsUploaded: true,
+      riskLevel: "Low" as RiskLevel,
+    };
+
+    users.merchants = [
+      {
+        id,
+        businessName: "Demo Trading Co.",
+        ownerName: "Demo Seller",
+        email: demoMerchantEmail,
+        phone: "+966 50 333 4444",
+        password: "",
+        passwordHash,
+        country: "Saudi Arabia",
+        city: "Riyadh",
+        businessType: "Distributor",
+        commercialRegistrationNumber: "CR-DEMO-001",
+        vatNumber: "VAT-DEMO-001",
+        iban: "SA0000000000000000009999",
+        bankDetails: "Bank: Demo Bank • SWIFT: DEMOSAAA • Beneficiary: Demo Trading Co.",
+        storeName: "Demo Store",
+        storeSlug: "demo-store",
+        documentFileName: uploadedDocuments[0].name,
+        status: "approved",
+        rejectionReason: undefined,
+        notes: "Auto-approved demo merchant.",
+        uploadedDocuments,
+        riskChecks,
+        createdAt,
+      },
+      ...users.merchants,
+    ];
+
+    const merchantForAdmin: MockMerchant = {
+      id,
+      businessName: "Demo Trading Co.",
+      ownerName: "Demo Seller",
+      email: demoMerchantEmail,
+      phone: "+966 50 333 4444",
+      country: "Saudi Arabia",
+      city: "Riyadh",
+      businessType: "Distributor",
+      commercialRegistrationNumber: "CR-DEMO-001",
+      vatNumber: "VAT-DEMO-001",
+      iban: "SA0000000000000000009999",
+      bankDetails: "Bank: Demo Bank • SWIFT: DEMOSAAA • Beneficiary: Demo Trading Co.",
+      storeName: "Demo Store",
+      storeSlug: "demo-store",
+      uploadedDocuments,
+      status: "approved",
+      notes: "Auto-approved demo merchant.",
+      riskChecks,
+      createdAt,
+    };
+    upsertMerchantFromRegistration(merchantForAdmin);
+  }
+
+  saveUsers(users);
+};
+
 export const registerMerchant = async (input: MerchantRegistrationInput) => {
   const users = loadUsers();
 
@@ -205,8 +517,8 @@ export const registerMerchant = async (input: MerchantRegistrationInput) => {
     status: "pending_verification",
     uploadedDocuments,
     riskChecks: {
-      emailVerified: false,
-      phoneVerified: false,
+      emailVerified: Boolean(input.emailVerified),
+      phoneVerified: Boolean(input.phoneVerified),
       crUploaded: Boolean(input.commercialRegistrationNumber.trim()) && uploadedDocuments.length > 0,
       bankDetailsProvided: Boolean(input.bankDetails.trim()),
       documentsUploaded: uploadedDocuments.length > 0,
@@ -259,9 +571,40 @@ export const registerCustomer = async (input: CustomerRegistrationInput) => {
 
   const id = `c_${Math.random().toString(16).slice(2, 10)}`;
   const passwordHash = await hashPassword(input.password);
-  const stored: StoredCustomer = { ...input, email, id, passwordHash };
+  const createdAt = new Date().toISOString().slice(0, 10);
+  const stored: StoredCustomer = {
+    ...input,
+    email,
+    id,
+    passwordHash,
+    status: "approved",
+    notes: "",
+    riskChecks: {
+      emailVerified: Boolean(input.emailVerified),
+      phoneVerified: Boolean(input.phoneVerified),
+      riskLevel: (input.emailVerified ? "Low" : "Medium") as RiskLevel,
+    },
+    createdAt,
+  };
   users.customers = [stored, ...users.customers];
   saveUsers(users);
+
+  const customerForAdmin: MockCustomer = {
+    id,
+    name: input.name.trim(),
+    email,
+    phone: input.phone.trim(),
+    address: input.address?.trim() ? input.address.trim() : undefined,
+    status: "approved",
+    notes: "",
+    riskChecks: {
+      emailVerified: Boolean(input.emailVerified),
+      phoneVerified: Boolean(input.phoneVerified),
+      riskLevel: input.emailVerified ? "Low" : "Medium",
+    },
+    createdAt,
+  };
+  upsertCustomerFromRegistration(customerForAdmin);
 
   const session = createSessionForUser({
     id,
@@ -282,7 +625,14 @@ export const loginWithEmail = async (input: { email: string; password: string; r
 
   if (input.role === "MERCHANT") {
     const merchant = users.merchants.find((m) => m.email.toLowerCase() === email);
-    if (!merchant) throw new Error("No merchant account found for this email.");
+    if (!merchant) {
+      const draft = getMerchantSignupDraftByEmail(email);
+      if (draft) {
+        if (!draft.emailVerification.verified) throw new Error("Email verification required. Please verify your email to continue registration.");
+        if (draft.step < 4) throw new Error("Profile completion required. Please complete your business profile.");
+      }
+      throw new Error("No merchant account found for this email.");
+    }
     const ok = await verifyPassword(input.password, merchant.passwordHash);
     if (!ok) throw new Error("Incorrect password.");
 
@@ -308,9 +658,25 @@ export const loginWithEmail = async (input: { email: string; password: string; r
   }
 
   const customer = users.customers.find((c) => c.email.toLowerCase() === email);
-  if (!customer) throw new Error("No customer account found for this email.");
+  if (!customer) {
+    const draft = getCustomerSignupDraftByEmail(email);
+    if (draft) {
+      if (!draft.emailVerification.verified) throw new Error("Email verification required. Please verify your email to finish registration.");
+      throw new Error("Account creation in progress. Please refresh and try again.");
+    }
+    throw new Error("No customer account found for this email.");
+  }
   const ok = await verifyPassword(input.password, customer.passwordHash);
   if (!ok) throw new Error("Incorrect password.");
+
+  const verification = getCustomerById(customer.id);
+  const status = (verification?.status ?? (customer as any).status ?? "approved") as CustomerStatus;
+  if (status !== "approved") {
+    const reason = verification?.rejectionReason ?? (customer as any).rejectionReason;
+    if (status === "rejected") throw new Error(reason ? `Rejected: ${reason}` : "Rejected: Contact support.");
+    if (status === "suspended") throw new Error("Suspended: Contact support.");
+    throw new Error("Pending Verification: Your customer account is under review.");
+  }
 
   const session = createSessionForUser({
     id: customer.id,
