@@ -1,5 +1,7 @@
 export type UserRole = 'ADMIN' | 'MERCHANT' | 'CUSTOMER';
 
+export type CurrencyCode = "SAR" | "AED" | "USD" | "EUR" | "GBP" | "KWD" | "BHD" | "QAR" | "OMR";
+
 export interface User {
   id: string;
   email: string;
@@ -65,6 +67,12 @@ export interface Order {
   merchantId: string;
   status: OrderStatus;
   totalAmount: number;
+  originalAmount: number;
+  originalCurrency: CurrencyCode;
+  displayCurrency?: CurrencyCode;
+  convertedAmount?: number;
+  exchangeRate?: number;
+  exchangeRateUpdatedAt?: string;
   items: OrderItem[];
   paymentMethod: PaymentMethod;
   paymentType?: PaymentType;

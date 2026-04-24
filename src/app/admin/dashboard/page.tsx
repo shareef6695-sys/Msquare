@@ -5,21 +5,47 @@ import Link from "next/link";
 import { AdminLayout } from "@/components/admin/AdminLayout";
 import { Card, CardContent } from "@/components/ui/Card";
 import { seedOrdersIfEmpty } from "@/services/orderStore";
-import { Order } from "@/types";
+import { useExchangeRatesUsd } from "@/services/exchangeRateService";
+import { SUPPORTED_CURRENCIES, convertCurrency, formatCurrency } from "@/utils/currencyConverter";
+import { type CurrencyCode, type Order } from "@/types";
 import { listCustomers, listMerchants } from "@/services/adminService";
 import { hasMultipleFailedAuthAttempts } from "@/services/authStore";
 import { AlertTriangle, Banknote, FileText, Gavel, ShieldCheck, Store, Users } from "lucide-react";
 
-const formatMoney = (amount: number) => {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
+const defaultCurrency = (): CurrencyCode => {
+  const raw = (process.env.NEXT_PUBLIC_DEFAULT_CURRENCY as CurrencyCode | undefined) ?? "SAR";
+  return SUPPORTED_CURRENCIES.includes(raw) ? raw : "SAR";
 };
 
 export default function AdminDashboardPage() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [reportingCurrency, setReportingCurrency] = useState<CurrencyCode>(defaultCurrency());
+  const { loading: ratesLoading, result: ratesResult } = useExchangeRatesUsd();
+  const ratesUsd = ratesResult?.ratesUsd;
 
   useEffect(() => {
     setOrders(seedOrdersIfEmpty());
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem("msquare.currency.admin.v1");
+    if (raw && SUPPORTED_CURRENCIES.includes(raw as CurrencyCode)) setReportingCurrency(raw as CurrencyCode);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("msquare.currency.admin.v1", reportingCurrency);
+  }, [reportingCurrency]);
+
+  const totalGmv = useMemo(() => {
+    if (!ratesUsd) return orders.reduce((sum, o) => sum + (o.originalAmount ?? o.totalAmount ?? 0), 0);
+    return orders.reduce((sum, o) => {
+      const originalAmount = o.originalAmount ?? o.totalAmount ?? 0;
+      const originalCurrency = (o.originalCurrency ?? defaultCurrency()) as CurrencyCode;
+      return sum + convertCurrency(originalAmount, originalCurrency, reportingCurrency, ratesUsd).convertedAmount;
+    }, 0);
+  }, [orders, ratesUsd, reportingCurrency]);
 
   const summary = useMemo(() => {
     const merchants = listMerchants({ status: "all" });
@@ -41,7 +67,6 @@ export default function AdminDashboardPage() {
     const totalMerchants = merchants.length;
     const activeMerchants = merchants.filter((m) => m.status === "approved").length;
     const totalOrders = orders.length;
-    const totalGmv = orders.reduce((sum, o) => sum + (o.totalAmount ?? 0), 0);
     const escrowTransactions = escrowOrders.length;
     const lcRequests = lcOrders.length;
     const complianceAlerts =
@@ -68,7 +93,7 @@ export default function AdminDashboardPage() {
       failedAttempts,
       missingDocuments,
     };
-  }, [orders]);
+  }, [orders, totalGmv]);
 
   return (
     <AdminLayout>
@@ -77,9 +102,26 @@ export default function AdminDashboardPage() {
           <h1 className="text-2xl font-black tracking-tight text-gray-900">Admin Dashboard</h1>
           <p className="text-gray-500">Monitor merchants, trade assurance, payments, and LC activity.</p>
         </div>
-        <div className="inline-flex items-center gap-2 rounded-full border border-gray-200/60 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm shadow-gray-900/5">
-          <ShieldCheck className="w-4 h-4 text-primary-700" />
-          Platform control
+        <div className="flex flex-col sm:flex-row gap-2">
+          <div className="rounded-2xl border border-gray-200/60 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 shadow-sm shadow-gray-900/5">
+            <div className="text-[11px] font-black uppercase tracking-widest text-gray-400">Reporting currency</div>
+            <select
+              value={reportingCurrency}
+              onChange={(e) => setReportingCurrency(e.target.value as CurrencyCode)}
+              className="mt-1 w-full bg-transparent text-sm font-black text-gray-900 focus:outline-none"
+              disabled={ratesLoading}
+            >
+              {SUPPORTED_CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-gray-200/60 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm shadow-gray-900/5">
+            <ShieldCheck className="w-4 h-4 text-primary-700" />
+            Platform control
+          </div>
         </div>
       </div>
 
@@ -88,7 +130,7 @@ export default function AdminDashboardPage() {
           { label: "Total merchants", value: String(summary.totalMerchants), icon: <Store className="w-5 h-5" />, href: "/admin/merchants" },
           { label: "Active merchants", value: String(summary.activeMerchants), icon: <ShieldCheck className="w-5 h-5" />, href: "/admin/merchants" },
           { label: "Total orders", value: String(summary.totalOrders), icon: <ShieldCheck className="w-5 h-5" />, href: "/admin/orders" },
-          { label: "Total GMV", value: formatMoney(summary.totalGmv), icon: <Banknote className="w-5 h-5" />, href: "/admin/payments" },
+          { label: "Total GMV", value: formatCurrency(summary.totalGmv, reportingCurrency), icon: <Banknote className="w-5 h-5" />, href: "/admin/payments" },
         ].map((stat) => (
           <Link key={stat.label} href={stat.href}>
             <Card className="hover:shadow-sm transition-all">
@@ -99,6 +141,19 @@ export default function AdminDashboardPage() {
                 <div className="min-w-0">
                   <div className="text-xs font-semibold text-gray-500 uppercase tracking-widest">{stat.label}</div>
                   <div className="text-xl font-black text-gray-900 mt-1 truncate">{stat.value}</div>
+                  {stat.label === "Total GMV" && (
+                    <div className="text-[11px] text-gray-500 mt-1">
+                      {ratesLoading ? (
+                        <span>Loading exchange rate…</span>
+                      ) : ratesResult ? (
+                        <span>
+                          Converted using live exchange rate • Last updated: {new Date(ratesResult.updatedAt).toLocaleString()}
+                          {ratesResult.usedFallback ? " • Using last available exchange rate" : ""}
+                          {ratesResult.stale ? " • Rate may be outdated" : ""}
+                        </span>
+                      ) : null}
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

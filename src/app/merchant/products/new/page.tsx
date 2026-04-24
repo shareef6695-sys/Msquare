@@ -10,6 +10,7 @@ import { loadSession } from "@/services/authStore";
 import { getComplianceConfig, getMerchantById } from "@/services/adminService";
 import { addProduct } from "@/services/productService";
 import { MOCK_CATEGORIES } from "@/data/mockCategories";
+import { AIProductGenerator } from "@/components/ai/AIProductGenerator";
 
 const startOfDayUtc = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
 
@@ -124,6 +125,22 @@ export default function MerchantNewProductPage() {
               </select>
             </div>
           </div>
+
+          <AIProductGenerator
+            productName={draft.name}
+            description={draft.description}
+            categoryId={draft.categoryId}
+            categories={MOCK_CATEGORIES}
+            disabled={busy}
+            onApply={(next) => {
+              setDraft((d) => ({
+                ...d,
+                name: next.name ?? d.name,
+                description: next.description ?? d.description,
+              }));
+            }}
+            onApplyCategory={(nextCategoryId) => setDraft((d) => ({ ...d, categoryId: nextCategoryId }))}
+          />
 
           <div>
             <div className="text-sm font-black text-gray-900 mb-2">Description</div>

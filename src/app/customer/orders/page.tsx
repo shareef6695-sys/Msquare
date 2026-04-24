@@ -8,11 +8,15 @@ import { Button } from "@/components/ui/Button";
 import { confirmDeliveryAndRelease, seedOrdersIfEmpty } from "@/services/orderStore";
 import { sendDashboardNotification } from "@/services/emailService";
 import { getCustomerById, getMerchantById } from "@/services/adminService";
-import { Order } from "@/types";
+import { loadSession } from "@/services/authStore";
+import { useExchangeRatesUsd } from "@/services/exchangeRateService";
+import { SUPPORTED_CURRENCIES, convertCurrency, formatCurrency } from "@/utils/currencyConverter";
+import { type CurrencyCode, Order } from "@/types";
 import { AlertCircle, Banknote, CheckCircle2, Clock, FileDown, FileSearch, ShieldCheck, Truck, Upload } from "lucide-react";
 
-const formatMoney = (amount: number) => {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
+const defaultCurrency = (): CurrencyCode => {
+  const raw = (process.env.NEXT_PUBLIC_DEFAULT_CURRENCY as CurrencyCode | undefined) ?? "SAR";
+  return SUPPORTED_CURRENCIES.includes(raw) ? raw : "SAR";
 };
 
 const badgeClass = (status: Order["status"]) => {
@@ -59,6 +63,10 @@ const downloadHtmlDocument = (input: { html: string; filename: string }) => {
 
 export default function CustomerOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [customerId, setCustomerId] = useState<string | null>(null);
+  const [displayCurrency, setDisplayCurrency] = useState<CurrencyCode>(defaultCurrency());
+  const { loading: ratesLoading, result: ratesResult } = useExchangeRatesUsd();
+  const ratesUsd = ratesResult?.ratesUsd;
   const [lcState, setLcState] = useState<
     Record<
       string,
@@ -79,8 +87,19 @@ export default function CustomerOrdersPage() {
   const [draftClaimDescription, setDraftClaimDescription] = useState("");
 
   useEffect(() => {
-    setOrders(seedOrdersIfEmpty());
+    const session = loadSession();
+    if (!session || session.user.role !== "CUSTOMER") return;
+    setCustomerId(session.user.id);
+    setOrders(seedOrdersIfEmpty().filter((o) => o.customerId === session.user.id));
   }, []);
+
+  useEffect(() => {
+    if (!customerId || typeof window === "undefined") return;
+    const key = `msquare.currency.customer.${customerId}.v1`;
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return;
+    if (SUPPORTED_CURRENCIES.includes(raw as CurrencyCode)) setDisplayCurrency(raw as CurrencyCode);
+  }, [customerId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -230,7 +249,31 @@ export default function CustomerOrdersPage() {
                   <div className="flex items-center justify-between md:justify-end gap-6">
                     <div className="text-right">
                       <div className="text-xs text-gray-500">Total</div>
-                      <div className="text-base font-black text-gray-900">{formatMoney(order.totalAmount)}</div>
+                      {(() => {
+                        const originalAmount = order.originalAmount ?? order.totalAmount ?? 0;
+                        const originalCurrency = (order.originalCurrency ?? defaultCurrency()) as CurrencyCode;
+                        const converted =
+                          ratesUsd && originalCurrency !== displayCurrency
+                            ? convertCurrency(originalAmount, originalCurrency, displayCurrency, ratesUsd).convertedAmount
+                            : null;
+                        return (
+                          <div className="text-base font-black text-gray-900">
+                            {formatCurrency(originalAmount, originalCurrency)}
+                            {converted !== null ? ` ≈ ${formatCurrency(converted, displayCurrency)}` : ""}
+                          </div>
+                        );
+                      })()}
+                      <div className="text-[11px] text-gray-500 mt-1">
+                        {ratesLoading ? (
+                          <span>Loading exchange rate…</span>
+                        ) : ratesResult ? (
+                          <span>
+                            Converted using live exchange rate • Last updated: {new Date(ratesResult.updatedAt).toLocaleString()}
+                            {ratesResult.usedFallback ? " • Using last available exchange rate" : ""}
+                            {ratesResult.stale ? " • Rate may be outdated" : ""}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                     <div className="flex flex-col sm:flex-row gap-2">
                       {isAwaitingConfirmation ? (
@@ -338,11 +381,11 @@ export default function CustomerOrdersPage() {
                             <div className="min-w-0">
                               <div className="text-sm font-semibold text-gray-900 truncate">{item.productName}</div>
                               <div className="text-xs text-gray-500 mt-1">
-                                Qty {item.quantity} • {formatMoney(item.price)}
+                                Qty {item.quantity} • {formatCurrency(item.price, (order.originalCurrency ?? defaultCurrency()) as CurrencyCode)}
                               </div>
                             </div>
                             <div className="text-sm font-black text-gray-900">
-                              {formatMoney(item.price * item.quantity)}
+                              {formatCurrency(item.price * item.quantity, (order.originalCurrency ?? defaultCurrency()) as CurrencyCode)}
                             </div>
                           </div>
                         ))}
@@ -400,7 +443,10 @@ export default function CustomerOrdersPage() {
                           Method: <span className="font-black text-gray-900">{order.shipping?.methodName ?? "Standard"}</span>
                         </div>
                         <div className="text-sm text-gray-700 mt-2">
-                          Cost: <span className="font-black text-gray-900">{formatMoney(order.shipping?.cost ?? 0)}</span>
+                          Cost:{" "}
+                          <span className="font-black text-gray-900">
+                            {formatCurrency(order.shipping?.cost ?? 0, (order.originalCurrency ?? defaultCurrency()) as CurrencyCode)}
+                          </span>
                         </div>
                         <div className="text-sm text-gray-700 mt-2">
                           Estimate: <span className="font-black text-gray-900">{order.shipping?.estimatedDays ?? 6} days</span>

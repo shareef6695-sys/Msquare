@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { AdminLayout } from "@/components/admin/AdminLayout";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { analyzeComplianceDocuments, generateRejectionReason } from "@/services/aiService";
 import {
   adminApproveComplianceDocument,
   adminOverrideDocumentExpiry,
@@ -58,6 +59,23 @@ export default function AdminCompliancePage() {
   const [message, setMessage] = useState("");
   const [overrideExpiry, setOverrideExpiry] = useState("");
   const [overrideReason, setOverrideReason] = useState("");
+  const [aiBusy, setAiBusy] = useState<Record<string, boolean>>({});
+  const [aiByKey, setAiByKey] = useState<
+    Record<
+      string,
+      | {
+          missingDocuments: string[];
+          riskExplanation: string;
+          recommendedAction: string;
+          rejectionReasonSuggestion: string;
+          notes: string[];
+          generatedAt: string;
+        }
+      | undefined
+    >
+  >({});
+  const [aiOpen, setAiOpen] = useState<Record<string, boolean>>({});
+  const [aiRejectBusy, setAiRejectBusy] = useState(false);
 
   const rejectionPresets = [
     "Unclear file",
@@ -204,6 +222,36 @@ export default function AdminCompliancePage() {
       refresh();
     } finally {
       setBusy(false);
+    }
+  };
+
+  const runAiForRow = async (row: (typeof overview.allDocs)[number]) => {
+    const key = `${row.ownerType}:${row.ownerId}:${row.document.id}`;
+    setAiBusy((s) => ({ ...s, [key]: true }));
+    try {
+      const res = await analyzeComplianceDocuments({
+        ownerType: row.ownerType,
+        documentType: row.document.documentType,
+        computedStatus: row.computedStatus,
+        riskLevel: row.ownerRiskLevel,
+        daysToExpiry: row.daysToExpiry,
+        inGrace: row.inGrace,
+        hasOverride: Boolean(row.document.overrideExpiry),
+      });
+      setAiByKey((m) => ({
+        ...m,
+        [key]: {
+          missingDocuments: res.missingDocuments,
+          riskExplanation: res.riskExplanation,
+          recommendedAction: res.recommendedAction,
+          rejectionReasonSuggestion: res.rejectionReasonSuggestion,
+          notes: res.notes,
+          generatedAt: res.meta.generatedAt,
+        },
+      }));
+      setAiOpen((o) => ({ ...o, [key]: true }));
+    } finally {
+      setAiBusy((s) => ({ ...s, [key]: false }));
     }
   };
 
@@ -562,96 +610,149 @@ export default function AdminCompliancePage() {
               <div className="rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-3 text-sm text-gray-600">No items found.</div>
             ) : (
               (tab === "expired" ? expiredRows : tab === "expiring" ? expiringRows : pendingRows).map((row) => (
-                <div
-                  key={`${row.ownerType}:${row.ownerId}:${row.document.id}`}
-                  className="rounded-2xl border border-gray-200/60 bg-white px-4 py-3 flex flex-col lg:flex-row lg:items-center justify-between gap-4"
-                >
-                  <div className="min-w-0">
-                    <div className="text-sm font-black text-gray-900">{row.document.documentType}</div>
-                    <div className="mt-1 text-xs text-gray-500">
-                      {row.ownerType}: <span className="font-semibold text-gray-700">{row.ownerName}</span> • {row.ownerEmail}
+                <div key={`${row.ownerType}:${row.ownerId}:${row.document.id}`} className="rounded-2xl border border-gray-200/60 bg-white px-4 py-3">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="text-sm font-black text-gray-900">{row.document.documentType}</div>
+                      <div className="mt-1 text-xs text-gray-500">
+                        {row.ownerType}: <span className="font-semibold text-gray-700">{row.ownerName}</span> • {row.ownerEmail}
+                      </div>
+                      <div className="mt-1 text-xs text-gray-500">
+                        Issue {row.document.issueDate} • Expiry {row.effectiveExpiryDate}
+                        {row.document.overrideExpiry && (
+                          <>
+                            {" "}
+                            • <span className="font-semibold text-gray-700">Override</span>
+                          </>
+                        )}
+                        {typeof row.daysToExpiry === "number" && tab !== "pending" && (
+                          <>
+                            {" "}
+                            • {row.daysToExpiry >= 0 ? `${row.daysToExpiry} days left` : `${Math.abs(row.daysToExpiry)} days overdue`}
+                            {row.inGrace && <span className="font-semibold text-gray-700"> (grace)</span>}
+                          </>
+                        )}
+                      </div>
                     </div>
-                    <div className="mt-1 text-xs text-gray-500">
-                      Issue {row.document.issueDate} • Expiry {row.effectiveExpiryDate}
-                      {row.document.overrideExpiry && (
-                        <>
-                          {" "}
-                          • <span className="font-semibold text-gray-700">Override</span>
-                        </>
-                      )}
-                      {typeof row.daysToExpiry === "number" && tab !== "pending" && (
-                        <>
-                          {" "}
-                          • {row.daysToExpiry >= 0 ? `${row.daysToExpiry} days left` : `${Math.abs(row.daysToExpiry)} days overdue`}
-                          {row.inGrace && <span className="font-semibold text-gray-700"> (grace)</span>}
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-black ${badge(row.computedStatus)}`}>
-                      {row.computedStatus.replaceAll("_", " ")}
-                    </span>
-                    <span
-                      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-black ${
-                        row.ownerRiskLevel === "High"
-                          ? "border-red-200/70 bg-red-50 text-red-700"
-                          : row.ownerRiskLevel === "Medium"
-                            ? "border-amber-200/70 bg-amber-50 text-amber-800"
-                            : "border-green-200/70 bg-green-50 text-green-800"
-                      }`}
-                    >
-                      Risk {row.ownerRiskLevel}
-                    </span>
-                    <span
-                      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-black ${
-                        row.ownerComplianceBadge === "Critical"
-                          ? "border-red-200/70 bg-red-50 text-red-700"
-                          : row.ownerComplianceBadge === "Warning"
-                            ? "border-amber-200/70 bg-amber-50 text-amber-800"
-                            : "border-green-200/70 bg-green-50 text-green-800"
-                      }`}
-                    >
-                      Compliance {row.ownerComplianceBadge} • {row.ownerComplianceScore}
-                    </span>
-                    {row.document.status === "under_review" && (
-                      <Button onClick={() => approveDoc(row.ownerType, row.ownerId, row.document.id)} disabled={busy}>
-                        Approve
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-black ${badge(row.computedStatus)}`}>
+                        {row.computedStatus.replaceAll("_", " ")}
+                      </span>
+                      <span
+                        className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-black ${
+                          row.ownerRiskLevel === "High"
+                            ? "border-red-200/70 bg-red-50 text-red-700"
+                            : row.ownerRiskLevel === "Medium"
+                              ? "border-amber-200/70 bg-amber-50 text-amber-800"
+                              : "border-green-200/70 bg-green-50 text-green-800"
+                        }`}
+                      >
+                        Risk {row.ownerRiskLevel}
+                      </span>
+                      <span
+                        className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-black ${
+                          row.ownerComplianceBadge === "Critical"
+                            ? "border-red-200/70 bg-red-50 text-red-700"
+                            : row.ownerComplianceBadge === "Warning"
+                              ? "border-amber-200/70 bg-amber-50 text-amber-800"
+                              : "border-green-200/70 bg-green-50 text-green-800"
+                        }`}
+                      >
+                        Compliance {row.ownerComplianceBadge} • {row.ownerComplianceScore}
+                      </span>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          const k = `${row.ownerType}:${row.ownerId}:${row.document.id}`;
+                          if (aiByKey[k]) setAiOpen((o) => ({ ...o, [k]: !Boolean(o[k]) }));
+                          else void runAiForRow(row);
+                        }}
+                        disabled={busy || Boolean(aiBusy[`${row.ownerType}:${row.ownerId}:${row.document.id}`])}
+                      >
+                        {aiBusy[`${row.ownerType}:${row.ownerId}:${row.document.id}`] ? "AI is thinking..." : "AI suggestions"}
                       </Button>
-                    )}
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setSelected({ ownerType: row.ownerType, ownerId: row.ownerId, documentId: row.document.id });
-                        setRejectOpen(true);
-                      }}
-                      disabled={busy}
-                    >
-                      Reject
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setSelected({ ownerType: row.ownerType, ownerId: row.ownerId, documentId: row.document.id });
-                        setReplacementOpen(true);
-                      }}
-                      disabled={busy}
-                    >
-                      Request replacement
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setSelected({ ownerType: row.ownerType, ownerId: row.ownerId, documentId: row.document.id });
-                        setOverrideExpiry(row.effectiveExpiryDate);
-                        setOverrideReason("");
-                        setOverrideOpen(true);
-                      }}
-                      disabled={busy}
-                    >
-                      Override expiry
-                    </Button>
+                      {row.document.status === "under_review" && (
+                        <Button onClick={() => approveDoc(row.ownerType, row.ownerId, row.document.id)} disabled={busy}>
+                          Approve
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setSelected({ ownerType: row.ownerType, ownerId: row.ownerId, documentId: row.document.id });
+                          setRejectOpen(true);
+                        }}
+                        disabled={busy}
+                      >
+                        Reject
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setSelected({ ownerType: row.ownerType, ownerId: row.ownerId, documentId: row.document.id });
+                          setReplacementOpen(true);
+                        }}
+                        disabled={busy}
+                      >
+                        Request replacement
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setSelected({ ownerType: row.ownerType, ownerId: row.ownerId, documentId: row.document.id });
+                          setOverrideExpiry(row.effectiveExpiryDate);
+                          setOverrideReason("");
+                          setOverrideOpen(true);
+                        }}
+                        disabled={busy}
+                      >
+                        Override expiry
+                      </Button>
+                    </div>
                   </div>
+
+                  {(() => {
+                    const k = `${row.ownerType}:${row.ownerId}:${row.document.id}`;
+                    const ai = aiByKey[k];
+                    if (!aiOpen[k]) return null;
+                    return (
+                      <div className="mt-4 rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-3">
+                        {!ai ? (
+                          <div className="text-sm font-semibold text-gray-700">AI is thinking...</div>
+                        ) : (
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <div>
+                              <div className="text-xs font-bold uppercase tracking-widest text-gray-400">Recommended action</div>
+                              <div className="mt-1 text-sm font-semibold text-gray-900">{ai.recommendedAction}</div>
+                              <div className="mt-3 text-xs font-bold uppercase tracking-widest text-gray-400">Risk explanation</div>
+                              <div className="mt-1 text-sm text-gray-700">{ai.riskExplanation}</div>
+                              {ai.notes.length > 0 ? (
+                                <div className="mt-3 text-xs text-gray-600 space-y-1">
+                                  {ai.notes.map((n) => (
+                                    <div key={n}>• {n}</div>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                            <div>
+                              <div className="text-xs font-bold uppercase tracking-widest text-gray-400">Missing documents to request</div>
+                              <div className="mt-2 text-sm text-gray-700 space-y-1">
+                                {ai.missingDocuments.map((d) => (
+                                  <div key={d}>• {d}</div>
+                                ))}
+                              </div>
+                              <div className="mt-4 text-xs font-bold uppercase tracking-widest text-gray-400">Suggested rejection reason</div>
+                              <div className="mt-1 text-sm text-gray-700">{ai.rejectionReasonSuggestion}</div>
+                              <div className="mt-3 text-[11px] text-gray-500">Generated: {new Date(ai.generatedAt).toLocaleString()}</div>
+                            </div>
+                          </div>
+                        )}
+                        <div className="mt-3 text-[11px] font-semibold text-gray-500">
+                          AI suggestions are informational only. Admin must approve final actions.
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               ))
             )}
@@ -670,6 +771,28 @@ export default function AdminCompliancePage() {
       >
         <div className="text-sm text-gray-700">Select a reason or enter a custom reason. The user will be notified by email.</div>
         <div className="mt-4 grid grid-cols-1 gap-3">
+          <Button
+            variant="outline"
+            disabled={busy || !selected || aiRejectBusy}
+            onClick={() => {
+              if (!selected) return;
+              const row = overview.allDocs.find(
+                (x) => x.ownerType === selected.ownerType && x.ownerId === selected.ownerId && x.document.id === selected.documentId,
+              );
+              if (!row) return;
+              setAiRejectBusy(true);
+              void generateRejectionReason({
+                documentType: row.document.documentType,
+                computedStatus: row.computedStatus,
+                riskLevel: row.ownerRiskLevel,
+                context: `${row.ownerType} ${row.ownerRiskLevel} ${row.computedStatus}`,
+              })
+                .then((r) => setReason(r.reason))
+                .finally(() => setAiRejectBusy(false));
+            }}
+          >
+            {aiRejectBusy ? "AI is thinking..." : "Generate reason with AI"}
+          </Button>
           <select
             className="w-full rounded-2xl border border-gray-200/60 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20"
             value={(rejectionPresets as readonly string[]).includes(reason) ? reason : ""}

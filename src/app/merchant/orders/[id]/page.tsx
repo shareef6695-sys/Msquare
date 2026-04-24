@@ -8,7 +8,9 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { loadSession } from "@/services/authStore";
 import { loadOrders, markOrderShipped, seedOrdersIfEmpty } from "@/services/orderStore";
-import { type Order } from "@/types";
+import { useExchangeRatesUsd } from "@/services/exchangeRateService";
+import { SUPPORTED_CURRENCIES, convertCurrency, formatCurrency } from "@/utils/currencyConverter";
+import { type CurrencyCode, type Order } from "@/types";
 import { FileDown, Truck } from "lucide-react";
 
 const openPrintableDocument = (input: { html: string; title: string }) => {
@@ -36,8 +38,9 @@ const downloadHtmlDocument = (input: { html: string; filename: string }) => {
   URL.revokeObjectURL(url);
 };
 
-const formatMoney = (amount: number) => {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
+const defaultCurrency = (): CurrencyCode => {
+  const raw = (process.env.NEXT_PUBLIC_DEFAULT_CURRENCY as CurrencyCode | undefined) ?? "SAR";
+  return SUPPORTED_CURRENCIES.includes(raw) ? raw : "SAR";
 };
 
 const timeline = ["Order Placed", "Processing", "Shipped", "Out for Delivery", "Delivered"];
@@ -49,6 +52,9 @@ export default function MerchantOrderDetailsPage() {
   const [merchantId, setMerchantId] = useState<string | null>(null);
   const [teamRole, setTeamRole] = useState<"admin" | "manager" | "viewer">("admin");
   const [orders, setOrders] = useState<Order[]>([]);
+  const [displayCurrency, setDisplayCurrency] = useState<CurrencyCode>(defaultCurrency());
+  const { loading: ratesLoading, result: ratesResult } = useExchangeRatesUsd();
+  const ratesUsd = ratesResult?.ratesUsd;
 
   useEffect(() => {
     setOrders(seedOrdersIfEmpty());
@@ -57,6 +63,14 @@ export default function MerchantOrderDetailsPage() {
     setMerchantId(session.user.merchantParentId ?? session.user.id);
     setTeamRole((session.user.merchantTeamRole ?? "admin") as any);
   }, []);
+
+  useEffect(() => {
+    if (!merchantId || typeof window === "undefined") return;
+    const key = `msquare.currency.merchant.${merchantId}.v1`;
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return;
+    if (SUPPORTED_CURRENCIES.includes(raw as CurrencyCode)) setDisplayCurrency(raw as CurrencyCode);
+  }, [merchantId]);
 
   const order = useMemo(() => {
     if (!orderId) return null;
@@ -121,7 +135,31 @@ export default function MerchantOrderDetailsPage() {
               <div>
                 <div className="text-lg font-black text-gray-900">{order.id}</div>
                 <div className="text-sm text-gray-500 mt-1">
-                  {order.items.length} items • {formatMoney(order.totalAmount)} • {order.paymentMethod}
+                  {(() => {
+                    const originalAmount = order.originalAmount ?? order.totalAmount ?? 0;
+                    const originalCurrency = (order.originalCurrency ?? defaultCurrency()) as CurrencyCode;
+                    const converted =
+                      ratesUsd && originalCurrency !== displayCurrency
+                        ? convertCurrency(originalAmount, originalCurrency, displayCurrency, ratesUsd).convertedAmount
+                        : null;
+                    return (
+                      <span>
+                        {order.items.length} items • {formatCurrency(originalAmount, originalCurrency)}
+                        {converted !== null ? ` ≈ ${formatCurrency(converted, displayCurrency)}` : ""} • {order.paymentMethod}
+                      </span>
+                    );
+                  })()}
+                </div>
+                <div className="text-[11px] text-gray-500 mt-2">
+                  {ratesLoading ? (
+                    <span>Loading exchange rate…</span>
+                  ) : ratesResult ? (
+                    <span>
+                      Converted using live exchange rate • Last updated: {new Date(ratesResult.updatedAt).toLocaleString()}
+                      {ratesResult.usedFallback ? " • Using last available exchange rate" : ""}
+                      {ratesResult.stale ? " • Rate may be outdated" : ""}
+                    </span>
+                  ) : null}
                 </div>
               </div>
               <div className="rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-3">
@@ -227,11 +265,11 @@ export default function MerchantOrderDetailsPage() {
                       <div className="min-w-0">
                         <div className="text-sm font-black text-gray-900 truncate">{it.productName}</div>
                         <div className="text-xs text-gray-500 mt-1">
-                          Qty {it.quantity} • {formatMoney(it.price)}
+                          Qty {it.quantity} • {formatCurrency(it.price, (order.originalCurrency ?? defaultCurrency()) as CurrencyCode)}
                         </div>
                       </div>
                       <div className="rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-2 text-sm font-black text-gray-900">
-                        {formatMoney(it.price * it.quantity)}
+                        {formatCurrency(it.price * it.quantity, (order.originalCurrency ?? defaultCurrency()) as CurrencyCode)}
                       </div>
                     </div>
                   ))}
@@ -271,4 +309,3 @@ export default function MerchantOrderDetailsPage() {
     </MerchantLayout>
   );
 }
-

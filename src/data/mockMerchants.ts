@@ -1,3 +1,5 @@
+import type { CurrencyCode } from "@/types";
+
 export type MerchantStatus = "pending_verification" | "more_documents_required" | "approved" | "rejected" | "suspended";
 export type RiskLevel = "Low" | "Medium" | "High";
 
@@ -54,6 +56,7 @@ export type MockMerchant = {
   phone: string;
   country: string;
   city: string;
+  sellingCurrency?: CurrencyCode;
   businessType: string;
   commercialRegistrationNumber: string;
   vatNumber: string;
@@ -98,6 +101,7 @@ export const mockMerchants: MockMerchant[] = [
     phone: "+966 50 000 0001",
     country: "Saudi Arabia",
     city: "Jeddah",
+    sellingCurrency: "SAR",
     businessType: "Distributor",
     commercialRegistrationNumber: "CR-10203040",
     vatNumber: "VAT-300112233",
@@ -163,6 +167,7 @@ export const mockMerchants: MockMerchant[] = [
     phone: "+966 50 000 0002",
     country: "Saudi Arabia",
     city: "Riyadh",
+    sellingCurrency: "SAR",
     businessType: "Wholesaler",
     commercialRegistrationNumber: "CR-55667788",
     vatNumber: "VAT-778899001",
@@ -213,6 +218,7 @@ export const mockMerchants: MockMerchant[] = [
     phone: "+966 50 000 0003",
     country: "Saudi Arabia",
     city: "Dammam",
+    sellingCurrency: "SAR",
     businessType: "Manufacturer",
     commercialRegistrationNumber: "CR-99001122",
     vatNumber: "VAT-112233445",

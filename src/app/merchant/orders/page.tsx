@@ -8,7 +8,9 @@ import { Button } from "@/components/ui/Button";
 import { markOrderShipped, seedOrdersIfEmpty } from "@/services/orderStore";
 import { loadSession } from "@/services/authStore";
 import { getComplianceConfig, getMerchantById } from "@/services/adminService";
-import { Order } from "@/types";
+import { useExchangeRatesUsd } from "@/services/exchangeRateService";
+import { SUPPORTED_CURRENCIES, convertCurrency, formatCurrency } from "@/utils/currencyConverter";
+import { type CurrencyCode, Order } from "@/types";
 import { AlertCircle, PackageCheck, ShieldCheck, Truck } from "lucide-react";
 
 const startOfDayUtc = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
@@ -30,8 +32,9 @@ const isExpiredInGrace = (
   return dte < 0 && Math.abs(dte) <= graceDays;
 };
 
-const formatMoney = (amount: number) => {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
+const defaultCurrency = (): CurrencyCode => {
+  const raw = (process.env.NEXT_PUBLIC_DEFAULT_CURRENCY as CurrencyCode | undefined) ?? "SAR";
+  return SUPPORTED_CURRENCIES.includes(raw) ? raw : "SAR";
 };
 
 const badgeClass = (status: Order["status"]) => {
@@ -49,12 +52,23 @@ export default function MerchantOrdersPage() {
   const [shippingAllowed, setShippingAllowed] = useState(true);
   const [teamRole, setTeamRole] = useState<"admin" | "manager" | "viewer">("admin");
   const [merchantId, setMerchantId] = useState<string | null>(null);
+  const [displayCurrency, setDisplayCurrency] = useState<CurrencyCode>(defaultCurrency());
+  const { loading: ratesLoading, result: ratesResult } = useExchangeRatesUsd();
+  const ratesUsd = ratesResult?.ratesUsd;
 
   useEffect(() => {
     setOrders(seedOrdersIfEmpty());
     const session = loadSession();
     if (session && session.user.role === "MERCHANT") setMerchantId(session.user.merchantParentId ?? session.user.id);
   }, []);
+
+  useEffect(() => {
+    if (!merchantId || typeof window === "undefined") return;
+    const key = `msquare.currency.merchant.${merchantId}.v1`;
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return;
+    if (SUPPORTED_CURRENCIES.includes(raw as CurrencyCode)) setDisplayCurrency(raw as CurrencyCode);
+  }, [merchantId]);
 
   useEffect(() => {
     const session = loadSession();
@@ -165,7 +179,31 @@ export default function MerchantOrdersPage() {
                   <div className="flex items-center justify-between lg:justify-end gap-6">
                     <div className="text-right">
                       <div className="text-xs text-gray-500">Order total</div>
-                      <div className="text-base font-black text-gray-900">{formatMoney(order.totalAmount)}</div>
+                      {(() => {
+                        const originalAmount = order.originalAmount ?? order.totalAmount ?? 0;
+                        const originalCurrency = (order.originalCurrency ?? defaultCurrency()) as CurrencyCode;
+                        const converted =
+                          ratesUsd && originalCurrency !== displayCurrency
+                            ? convertCurrency(originalAmount, originalCurrency, displayCurrency, ratesUsd).convertedAmount
+                            : null;
+                        return (
+                          <div className="text-base font-black text-gray-900">
+                            {formatCurrency(originalAmount, originalCurrency)}
+                            {converted !== null ? ` ≈ ${formatCurrency(converted, displayCurrency)}` : ""}
+                          </div>
+                        );
+                      })()}
+                      <div className="text-[11px] text-gray-500 mt-1">
+                        {ratesLoading ? (
+                          <span>Loading exchange rate…</span>
+                        ) : ratesResult ? (
+                          <span>
+                            Converted using live exchange rate • Last updated: {new Date(ratesResult.updatedAt).toLocaleString()}
+                            {ratesResult.usedFallback ? " • Using last available exchange rate" : ""}
+                            {ratesResult.stale ? " • Rate may be outdated" : ""}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                     {canShip ? (
                       <Button
@@ -214,11 +252,11 @@ export default function MerchantOrdersPage() {
                             <div className="min-w-0">
                               <div className="text-sm font-semibold text-gray-900 truncate">{item.productName}</div>
                               <div className="text-xs text-gray-500 mt-1">
-                                Qty {item.quantity} • {formatMoney(item.price)}
+                                Qty {item.quantity} • {formatCurrency(item.price, (order.originalCurrency ?? defaultCurrency()) as CurrencyCode)}
                               </div>
                             </div>
                             <div className="text-sm font-black text-gray-900">
-                              {formatMoney(item.price * item.quantity)}
+                              {formatCurrency(item.price * item.quantity, (order.originalCurrency ?? defaultCurrency()) as CurrencyCode)}
                             </div>
                           </div>
                         ))}

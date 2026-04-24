@@ -4,18 +4,39 @@ import React, { useEffect, useMemo, useState } from "react";
 import { AdminLayout } from "@/components/admin/AdminLayout";
 import { Card, CardContent } from "@/components/ui/Card";
 import { seedOrdersIfEmpty } from "@/services/orderStore";
-import { Order } from "@/types";
+import { useExchangeRatesUsd } from "@/services/exchangeRateService";
+import { SUPPORTED_CURRENCIES, convertCurrency, formatCurrency } from "@/utils/currencyConverter";
+import { type CurrencyCode, type Order } from "@/types";
 import { FileText, ShieldCheck } from "lucide-react";
 
 type LcUiState = Record<string, { uploaded: boolean; status: string; lastAction?: string; fileName?: string; invoiceUrl?: string }>;
 
+const defaultCurrency = (): CurrencyCode => {
+  const raw = (process.env.NEXT_PUBLIC_DEFAULT_CURRENCY as CurrencyCode | undefined) ?? "SAR";
+  return SUPPORTED_CURRENCIES.includes(raw) ? raw : "SAR";
+};
+
 export default function AdminLcTransactionsPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [lcState, setLcState] = useState<LcUiState>({});
+  const [reportingCurrency, setReportingCurrency] = useState<CurrencyCode>(defaultCurrency());
+  const { loading: ratesLoading, result: ratesResult } = useExchangeRatesUsd();
+  const ratesUsd = ratesResult?.ratesUsd;
 
   useEffect(() => {
     setOrders(seedOrdersIfEmpty());
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem("msquare.currency.admin.v1");
+    if (raw && SUPPORTED_CURRENCIES.includes(raw as CurrencyCode)) setReportingCurrency(raw as CurrencyCode);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("msquare.currency.admin.v1", reportingCurrency);
+  }, [reportingCurrency]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -35,9 +56,37 @@ export default function AdminLcTransactionsPage() {
 
   return (
     <AdminLayout>
-      <div className="mb-8">
-        <h1 className="text-2xl font-black tracking-tight text-gray-900">LC transactions</h1>
-        <p className="text-gray-500">Track LC requests, documents, and bank status per order.</p>
+      <div className="mb-8 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight text-gray-900">LC transactions</h1>
+          <p className="text-gray-500">Track LC requests, documents, and bank status per order.</p>
+          <div className="text-[11px] text-gray-500 mt-2">
+            {ratesLoading ? (
+              <span>Loading exchange rate…</span>
+            ) : ratesResult ? (
+              <span>
+                Converted using live exchange rate • Last updated: {new Date(ratesResult.updatedAt).toLocaleString()}
+                {ratesResult.usedFallback ? " • Using last available exchange rate" : ""}
+                {ratesResult.stale ? " • Rate may be outdated" : ""}
+              </span>
+            ) : null}
+          </div>
+        </div>
+        <div className="rounded-2xl border border-gray-200/60 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 shadow-sm shadow-gray-900/5">
+          <div className="text-[11px] font-black uppercase tracking-widest text-gray-400">Reporting currency</div>
+          <select
+            value={reportingCurrency}
+            onChange={(e) => setReportingCurrency(e.target.value as CurrencyCode)}
+            className="mt-1 w-full bg-transparent text-sm font-black text-gray-900 focus:outline-none"
+            disabled={ratesLoading}
+          >
+            {SUPPORTED_CURRENCIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {lcOrders.length === 0 ? (
@@ -49,6 +98,10 @@ export default function AdminLcTransactionsPage() {
           {lcOrders.map((order) => {
             const ui = lcState[order.id];
             const status = order.lcStatus ?? ui?.status ?? "DRAFT";
+            const originalAmount = order.originalAmount ?? order.totalAmount ?? 0;
+            const originalCurrency = (order.originalCurrency ?? defaultCurrency()) as CurrencyCode;
+            const convertedAmount = ratesUsd ? convertCurrency(originalAmount, originalCurrency, reportingCurrency, ratesUsd).convertedAmount : null;
+            const showConverted = convertedAmount !== null && originalCurrency !== reportingCurrency;
 
             return (
               <Card key={order.id} className="overflow-hidden">
@@ -70,9 +123,18 @@ export default function AdminLcTransactionsPage() {
                       <span className="font-semibold text-gray-700">{order.merchantId}</span>
                     </div>
                   </div>
-                  <div className="inline-flex items-center gap-2 rounded-full border border-gray-200/60 bg-white px-3 py-1.5 text-xs font-bold text-gray-700">
-                    <ShieldCheck className="w-4 h-4 text-primary-700" />
-                    Bank workflow
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <div className="text-xs text-gray-500">Amount</div>
+                      <div className="text-sm font-black text-gray-900">{formatCurrency(originalAmount, originalCurrency)}</div>
+                      {showConverted ? (
+                        <div className="text-[11px] font-semibold text-gray-500 mt-1">≈ {formatCurrency(convertedAmount as number, reportingCurrency)}</div>
+                      ) : null}
+                    </div>
+                    <div className="inline-flex items-center gap-2 rounded-full border border-gray-200/60 bg-white px-3 py-1.5 text-xs font-bold text-gray-700">
+                      <ShieldCheck className="w-4 h-4 text-primary-700" />
+                      Bank workflow
+                    </div>
                   </div>
                 </div>
 

@@ -8,16 +8,22 @@ import { Button } from "@/components/ui/Button";
 import { loadSession } from "@/services/authStore";
 import { getMerchantById } from "@/services/adminService";
 import { loadOrders, seedOrdersIfEmpty } from "@/services/orderStore";
-import { type Order } from "@/types";
+import { useExchangeRatesUsd } from "@/services/exchangeRateService";
+import { SUPPORTED_CURRENCIES, convertCurrency, formatCurrency } from "@/utils/currencyConverter";
+import { type CurrencyCode, type Order } from "@/types";
 import { CreditCard, ShieldCheck } from "lucide-react";
 
-const formatMoney = (amount: number) => {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
+const defaultCurrency = (): CurrencyCode => {
+  const raw = (process.env.NEXT_PUBLIC_DEFAULT_CURRENCY as CurrencyCode | undefined) ?? "SAR";
+  return SUPPORTED_CURRENCIES.includes(raw) ? raw : "SAR";
 };
 
 export default function MerchantPaymentsPage() {
   const [merchantId, setMerchantId] = useState<string | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [displayCurrency, setDisplayCurrency] = useState<CurrencyCode>(defaultCurrency());
+  const { loading: ratesLoading, result: ratesResult } = useExchangeRatesUsd();
+  const ratesUsd = ratesResult?.ratesUsd;
 
   useEffect(() => {
     setOrders(seedOrdersIfEmpty());
@@ -27,6 +33,14 @@ export default function MerchantPaymentsPage() {
     setOrders(loadOrders());
   }, []);
 
+  useEffect(() => {
+    if (!merchantId || typeof window === "undefined") return;
+    const key = `msquare.currency.merchant.${merchantId}.v1`;
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return;
+    if (SUPPORTED_CURRENCIES.includes(raw as CurrencyCode)) setDisplayCurrency(raw as CurrencyCode);
+  }, [merchantId]);
+
   const merchant = useMemo(() => (merchantId ? getMerchantById(merchantId) : null), [merchantId]);
 
   const myOrders = useMemo(() => {
@@ -35,9 +49,22 @@ export default function MerchantPaymentsPage() {
   }, [merchantId, orders]);
 
   const escrowOrders = myOrders.filter((o) => o.paymentMethod === "ESCROW" || o.paymentType === "escrow");
-  const totalGmv = myOrders.reduce((sum, o) => sum + (o.totalAmount ?? 0), 0);
-  const released = escrowOrders.filter((o) => o.payoutStatus === "RELEASED").reduce((sum, o) => sum + (o.totalAmount ?? 0), 0);
-  const onHold = escrowOrders.filter((o) => o.payoutStatus === "ON_HOLD").reduce((sum, o) => sum + (o.totalAmount ?? 0), 0);
+  const convert = (o: Order) => {
+    const originalAmount = o.originalAmount ?? o.totalAmount ?? 0;
+    const originalCurrency = (o.originalCurrency ?? merchant?.sellingCurrency ?? defaultCurrency()) as CurrencyCode;
+    if (!ratesUsd) return { displayAmount: originalAmount, originalAmount, originalCurrency, converted: null as number | null };
+    const convertedAmount = convertCurrency(originalAmount, originalCurrency, displayCurrency, ratesUsd).convertedAmount;
+    return {
+      displayAmount: convertedAmount,
+      originalAmount,
+      originalCurrency,
+      converted: originalCurrency !== displayCurrency ? convertedAmount : null,
+    };
+  };
+
+  const totalGmv = myOrders.reduce((sum, o) => sum + convert(o).displayAmount, 0);
+  const released = escrowOrders.filter((o) => o.payoutStatus === "RELEASED").reduce((sum, o) => sum + convert(o).displayAmount, 0);
+  const onHold = escrowOrders.filter((o) => o.payoutStatus === "ON_HOLD").reduce((sum, o) => sum + convert(o).displayAmount, 0);
 
   return (
     <MerchantLayout>
@@ -59,9 +86,9 @@ export default function MerchantPaymentsPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         {[
-          { label: "Total GMV", value: formatMoney(totalGmv), icon: <CreditCard className="w-5 h-5" /> },
-          { label: "Released payouts", value: formatMoney(released), icon: <ShieldCheck className="w-5 h-5" /> },
-          { label: "On-hold payouts", value: formatMoney(onHold), icon: <ShieldCheck className="w-5 h-5" /> },
+          { label: "Total GMV", value: formatCurrency(totalGmv, displayCurrency), icon: <CreditCard className="w-5 h-5" /> },
+          { label: "Released payouts", value: formatCurrency(released, displayCurrency), icon: <ShieldCheck className="w-5 h-5" /> },
+          { label: "On-hold payouts", value: formatCurrency(onHold, displayCurrency), icon: <ShieldCheck className="w-5 h-5" /> },
         ].map((s) => (
           <Card key={s.label}>
             <CardContent className="p-6 flex items-center gap-4">
@@ -71,6 +98,19 @@ export default function MerchantPaymentsPage() {
               <div className="min-w-0">
                 <div className="text-xs font-semibold text-gray-500 uppercase tracking-widest">{s.label}</div>
                 <div className="text-xl font-black text-gray-900 mt-1 truncate">{s.value}</div>
+                {s.label === "Total GMV" && (
+                  <div className="text-[11px] text-gray-500 mt-1">
+                    {ratesLoading ? (
+                      <span>Loading exchange rate…</span>
+                    ) : ratesResult ? (
+                      <span>
+                        Converted using live exchange rate • Last updated: {new Date(ratesResult.updatedAt).toLocaleString()}
+                        {ratesResult.usedFallback ? " • Using last available exchange rate" : ""}
+                        {ratesResult.stale ? " • Rate may be outdated" : ""}
+                      </span>
+                    ) : null}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -107,7 +147,20 @@ export default function MerchantPaymentsPage() {
                       <span className="inline-flex items-center rounded-full border border-gray-200/70 bg-gray-50 px-3 py-1 text-xs font-black text-gray-700">
                         Payout {o.payoutStatus ?? "—"}
                       </span>
-                      <div className="text-sm font-black text-gray-900">{formatMoney(o.totalAmount)}</div>
+                      {(() => {
+                        const originalAmount = o.originalAmount ?? o.totalAmount ?? 0;
+                        const originalCurrency = (o.originalCurrency ?? merchant?.sellingCurrency ?? defaultCurrency()) as CurrencyCode;
+                        const converted =
+                          ratesUsd && originalCurrency !== displayCurrency
+                            ? convertCurrency(originalAmount, originalCurrency, displayCurrency, ratesUsd).convertedAmount
+                            : null;
+                        return (
+                          <div className="text-sm font-black text-gray-900">
+                            {formatCurrency(originalAmount, originalCurrency)}
+                            {converted !== null ? ` ≈ ${formatCurrency(converted, displayCurrency)}` : ""}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </Link>
@@ -119,4 +172,3 @@ export default function MerchantPaymentsPage() {
     </MerchantLayout>
   );
 }
-

@@ -17,7 +17,14 @@ import {
   Search,
   Settings,
   ShieldCheck,
-  AlertTriangle
+  AlertTriangle,
+  Boxes,
+  ClipboardList,
+  Building2,
+  Calculator,
+  Receipt,
+  Warehouse,
+  BarChart3
 } from 'lucide-react';
 import { loadSession, logout } from "@/services/authStore";
 import { Button } from '@/components/ui/Button';
@@ -46,6 +53,16 @@ const menuItems = [
   { icon: <Settings className="w-5 h-5" />, label: 'Settings', href: '/merchant/settings' },
 ];
 
+const opsItems = [
+  { icon: <Boxes className="w-5 h-5" />, label: 'Inventory', href: '/merchant/operations?tab=inventory' },
+  { icon: <ClipboardList className="w-5 h-5" />, label: 'Purchases', href: '/merchant/operations?tab=purchases' },
+  { icon: <Building2 className="w-5 h-5" />, label: 'Suppliers', href: '/merchant/operations?tab=suppliers' },
+  { icon: <Calculator className="w-5 h-5" />, label: 'Finance', href: '/merchant/operations?tab=finance' },
+  { icon: <Receipt className="w-5 h-5" />, label: 'Invoices', href: '/merchant/operations?tab=invoices' },
+  { icon: <Warehouse className="w-5 h-5" />, label: 'Warehouse', href: '/merchant/operations?tab=warehouse' },
+  { icon: <BarChart3 className="w-5 h-5" />, label: 'Reports', href: '/merchant/operations?tab=reports' },
+];
+
 const startOfDayUtc = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
 
 const daysUntil = (expiryDate: string, now = new Date()) => {
@@ -69,6 +86,7 @@ export const MerchantLayout = ({ children }: { children: React.ReactNode }) => {
   const pathname = usePathname();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [opsTab, setOpsTab] = useState('inventory');
   const [merchantId, setMerchantId] = useState<string | null>(null);
   const [accountEmail, setAccountEmail] = useState<string | null>(null);
   const [accountPhone, setAccountPhone] = useState<string | null>(null);
@@ -93,6 +111,11 @@ export const MerchantLayout = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     setSidebarOpen(false);
+    if (pathname === '/merchant/operations' && typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get('tab');
+      if (tab) setOpsTab(tab);
+    }
   }, [pathname]);
 
   useEffect(() => {
@@ -248,6 +271,29 @@ export const MerchantLayout = ({ children }: { children: React.ReactNode }) => {
               {item.label}
             </Link>
           ))}
+
+          <div className="pt-5">
+            <div className="px-4 pb-2 text-[11px] font-black uppercase tracking-widest text-gray-400">Business Operations</div>
+            <div className="space-y-1">
+              {opsItems.map((item) => (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  className={`relative flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition-all ${
+                    pathname === '/merchant/operations' && item.href.includes(`tab=${opsTab}`)
+                      ? 'bg-primary-50 text-primary-700 shadow-sm shadow-primary-600/5'
+                      : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  {pathname === '/merchant/operations' && item.href.includes(`tab=${opsTab}`) && (
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 h-6 w-1 rounded-full bg-primary-600" />
+                  )}
+                  {item.icon}
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+          </div>
         </nav>
 
         <div className="p-4 border-t border-gray-100/60">

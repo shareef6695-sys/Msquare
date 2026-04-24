@@ -4,10 +4,13 @@ import React, { useEffect, useMemo, useState } from "react";
 import { AdminLayout } from "@/components/admin/AdminLayout";
 import { Card, CardContent } from "@/components/ui/Card";
 import { seedOrdersIfEmpty } from "@/services/orderStore";
-import { Order } from "@/types";
+import { useExchangeRatesUsd } from "@/services/exchangeRateService";
+import { SUPPORTED_CURRENCIES, convertCurrency, formatCurrency } from "@/utils/currencyConverter";
+import { type CurrencyCode, type Order } from "@/types";
 
-const formatMoney = (amount: number) => {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
+const defaultCurrency = (): CurrencyCode => {
+  const raw = (process.env.NEXT_PUBLIC_DEFAULT_CURRENCY as CurrencyCode | undefined) ?? "SAR";
+  return SUPPORTED_CURRENCIES.includes(raw) ? raw : "SAR";
 };
 
 const badgeClass = (status: Order["status"]) => {
@@ -21,10 +24,24 @@ const badgeClass = (status: Order["status"]) => {
 
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [reportingCurrency, setReportingCurrency] = useState<CurrencyCode>(defaultCurrency());
+  const { loading: ratesLoading, result: ratesResult } = useExchangeRatesUsd();
+  const ratesUsd = ratesResult?.ratesUsd;
 
   useEffect(() => {
     setOrders(seedOrdersIfEmpty());
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem("msquare.currency.admin.v1");
+    if (raw && SUPPORTED_CURRENCIES.includes(raw as CurrencyCode)) setReportingCurrency(raw as CurrencyCode);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("msquare.currency.admin.v1", reportingCurrency);
+  }, [reportingCurrency]);
 
   const sorted = useMemo(() => {
     return [...orders].sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
@@ -32,9 +49,37 @@ export default function AdminOrdersPage() {
 
   return (
     <AdminLayout>
-      <div className="mb-8">
-        <h1 className="text-2xl font-black tracking-tight text-gray-900">All orders</h1>
-        <p className="text-gray-500">Audit orders across escrow, LC, card, and bank transfers.</p>
+      <div className="mb-8 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight text-gray-900">All orders</h1>
+          <p className="text-gray-500">Audit orders across escrow, LC, card, and bank transfers.</p>
+          <div className="text-[11px] text-gray-500 mt-2">
+            {ratesLoading ? (
+              <span>Loading exchange rate…</span>
+            ) : ratesResult ? (
+              <span>
+                Converted using live exchange rate • Last updated: {new Date(ratesResult.updatedAt).toLocaleString()}
+                {ratesResult.usedFallback ? " • Using last available exchange rate" : ""}
+                {ratesResult.stale ? " • Rate may be outdated" : ""}
+              </span>
+            ) : null}
+          </div>
+        </div>
+        <div className="rounded-2xl border border-gray-200/60 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 shadow-sm shadow-gray-900/5">
+          <div className="text-[11px] font-black uppercase tracking-widest text-gray-400">Reporting currency</div>
+          <select
+            value={reportingCurrency}
+            onChange={(e) => setReportingCurrency(e.target.value as CurrencyCode)}
+            className="mt-1 w-full bg-transparent text-sm font-black text-gray-900 focus:outline-none"
+            disabled={ratesLoading}
+          >
+            {SUPPORTED_CURRENCIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="space-y-6">
@@ -46,6 +91,10 @@ export default function AdminOrdersPage() {
           sorted.map((order) => {
             const isEscrow = order.paymentType === "escrow" || order.paymentMethod === "ESCROW";
             const isLc = order.paymentType === "lc" || order.paymentMethod === "LC";
+            const originalAmount = order.originalAmount ?? order.totalAmount ?? 0;
+            const originalCurrency = (order.originalCurrency ?? defaultCurrency()) as CurrencyCode;
+            const convertedAmount = ratesUsd ? convertCurrency(originalAmount, originalCurrency, reportingCurrency, ratesUsd).convertedAmount : null;
+            const showConverted = convertedAmount !== null && originalCurrency !== reportingCurrency;
 
             return (
               <Card key={order.id} className="overflow-hidden">
@@ -86,7 +135,7 @@ export default function AdminOrdersPage() {
                           Claim {order.insuranceClaimStatus}
                         </span>
                       )}
-                      {(order.totalAmount ?? 0) >= 50000 && (
+                      {originalAmount >= 50000 && (
                         <span className="inline-flex items-center rounded-full border border-amber-200/70 bg-amber-50 px-3 py-1 text-xs font-black text-amber-900">
                           Large order
                         </span>
@@ -106,7 +155,10 @@ export default function AdminOrdersPage() {
 
                   <div className="text-right">
                     <div className="text-xs text-gray-500">Order total</div>
-                    <div className="text-base font-black text-gray-900">{formatMoney(order.totalAmount)}</div>
+                    <div className="text-base font-black text-gray-900">{formatCurrency(originalAmount, originalCurrency)}</div>
+                    {showConverted ? (
+                      <div className="text-xs font-semibold text-gray-500 mt-1">≈ {formatCurrency(convertedAmount as number, reportingCurrency)}</div>
+                    ) : null}
                   </div>
                 </div>
 
@@ -123,10 +175,10 @@ export default function AdminOrdersPage() {
                             <div className="min-w-0">
                               <div className="text-sm font-semibold text-gray-900 truncate">{item.productName}</div>
                               <div className="text-xs text-gray-500 mt-1">
-                                Qty {item.quantity} • {formatMoney(item.price)}
+                                Qty {item.quantity} • {formatCurrency(item.price, originalCurrency)}
                               </div>
                             </div>
-                            <div className="text-sm font-black text-gray-900">{formatMoney(item.price * item.quantity)}</div>
+                            <div className="text-sm font-black text-gray-900">{formatCurrency(item.price * item.quantity, originalCurrency)}</div>
                           </div>
                         ))}
                       </div>

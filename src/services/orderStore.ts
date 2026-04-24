@@ -6,6 +6,7 @@ import {
   DisputeStatus,
   EscrowStatus,
   InsuranceClaimStatus,
+  type CurrencyCode,
   LcStatusType,
   Order,
   OrderStatus,
@@ -16,6 +17,12 @@ import {
 const STORAGE_KEY = "msquare.orders.v1";
 
 const isBrowser = () => typeof window !== "undefined";
+
+const supportedCurrencies: CurrencyCode[] = ["SAR", "AED", "USD", "EUR", "GBP", "KWD", "BHD", "QAR", "OMR"];
+const getDefaultCurrency = (): CurrencyCode => {
+  const raw = (process.env.NEXT_PUBLIC_DEFAULT_CURRENCY as CurrencyCode | undefined) ?? "SAR";
+  return supportedCurrencies.includes(raw) ? raw : "SAR";
+};
 
 const startOfDayUtc = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
 
@@ -38,7 +45,12 @@ const isExpiredInGrace = (
 
 const normalizeOrders = (orders: unknown): Order[] => {
   if (!Array.isArray(orders)) return [];
-  return orders.filter(Boolean) as Order[];
+  return (orders.filter(Boolean) as Order[]).map((o) => {
+    const merchantCurrency = getMerchantById(o.merchantId)?.sellingCurrency;
+    const originalCurrency = (o.originalCurrency ?? merchantCurrency ?? getDefaultCurrency()) as CurrencyCode;
+    const originalAmount = typeof o.originalAmount === "number" ? o.originalAmount : (o.totalAmount ?? 0);
+    return { ...o, originalAmount, originalCurrency };
+  });
 };
 
 export const loadOrders = (): Order[] => {
@@ -70,10 +82,12 @@ const withUpdatedOrder = (orders: Order[], orderId: string, updater: (order: Ord
   return next;
 };
 
-const formatMoney = (amount: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
+const formatMoney = (amount: number, currency: CurrencyCode) =>
+  new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
 
 const buildInvoiceHtml = (input: { order: Order; type: "order" | "proforma"; generatedAt: string }) => {
   const title = input.type === "proforma" ? "Proforma Invoice" : "Order Invoice";
+  const currency = input.order.originalCurrency ?? getDefaultCurrency();
   const lines = input.order.items
     .map(
       (i) => `
@@ -82,8 +96,8 @@ const buildInvoiceHtml = (input: { order: Order; type: "order" | "proforma"; gen
             <div style="font-weight: 700; color: #111827;">${i.productName}</div>
             <div style="font-size: 12px; color: #6b7280;">Qty ${i.quantity}</div>
           </td>
-          <td style="padding: 10px 12px; border-bottom: 1px solid #e5e7eb; text-align: right; white-space: nowrap;">${formatMoney(i.price)}</td>
-          <td style="padding: 10px 12px; border-bottom: 1px solid #e5e7eb; text-align: right; white-space: nowrap;">${formatMoney(i.price * i.quantity)}</td>
+          <td style="padding: 10px 12px; border-bottom: 1px solid #e5e7eb; text-align: right; white-space: nowrap;">${formatMoney(i.price, currency)}</td>
+          <td style="padding: 10px 12px; border-bottom: 1px solid #e5e7eb; text-align: right; white-space: nowrap;">${formatMoney(i.price * i.quantity, currency)}</td>
         </tr>
       `.trim(),
     )
@@ -145,17 +159,17 @@ const buildInvoiceHtml = (input: { order: Order; type: "order" | "proforma"; gen
           <div style="display:flex; justify-content:flex-end; margin-top: 16px;">
             <div style="min-width: 320px; border: 1px solid #e5e7eb; border-radius: 14px; padding: 14px; background:#fff;">
               <div style="display:flex; justify-content: space-between; font-size: 12px; color:#374151;">
-                <span>Subtotal</span><span style="font-weight:800;">${formatMoney(subtotal)}</span>
+                <span>Subtotal</span><span style="font-weight:800;">${formatMoney(subtotal, currency)}</span>
               </div>
               <div style="display:flex; justify-content: space-between; font-size: 12px; color:#374151; margin-top: 8px;">
-                <span>Shipping</span><span style="font-weight:800;">${formatMoney(shippingCost)}</span>
+                <span>Shipping</span><span style="font-weight:800;">${formatMoney(shippingCost, currency)}</span>
               </div>
               <div style="display:flex; justify-content: space-between; font-size: 12px; color:#374151; margin-top: 8px;">
-                <span>Tax</span><span style="font-weight:800;">${formatMoney(tax)}</span>
+                <span>Tax</span><span style="font-weight:800;">${formatMoney(tax, currency)}</span>
               </div>
               <div style="height:1px; background:#f3f4f6; margin: 12px 0;"></div>
               <div style="display:flex; justify-content: space-between;">
-                <span style="font-weight:900;">Total</span><span style="font-weight:900;">${formatMoney(total)}</span>
+                <span style="font-weight:900;">Total</span><span style="font-weight:900;">${formatMoney(total, currency)}</span>
               </div>
             </div>
           </div>
@@ -242,12 +256,15 @@ export const createEscrowOrder = (input: {
   const payoutStatus: PayoutStatus | undefined = paymentType === "escrow" ? "ON_HOLD" : undefined;
 
   const generatedAt = new Date().toISOString();
+  const originalCurrency = (merchant?.sellingCurrency ?? getDefaultCurrency()) as CurrencyCode;
   const baseOrder: Order = {
     id,
     customerId: input.customerId ?? "cust_guest",
     merchantId,
     status: paymentStatus === "COMPLETED" ? "PROCESSING" : "PENDING",
     totalAmount: input.totalAmount,
+    originalAmount: input.totalAmount,
+    originalCurrency,
     items: input.items,
     paymentMethod: input.paymentMethod,
     paymentType,
@@ -292,7 +309,7 @@ export const createEscrowOrder = (input: {
     void sendDashboardNotification({
       to: merchantEmail,
       title: "New order",
-      message: `New order received: ${newOrder.id} (${formatMoney(newOrder.totalAmount)}).`,
+      message: `New order received: ${newOrder.id} (${formatMoney(newOrder.totalAmount, newOrder.originalCurrency)}).`,
       meta: { event: "new_order", orderId: newOrder.id, merchantId },
     });
   }

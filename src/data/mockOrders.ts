@@ -24,6 +24,8 @@ export const MOCK_ESCROW_ORDERS: Order[] = [
     merchantId: "m1",
     status: "PROCESSING",
     totalAmount: 500,
+    originalAmount: 500,
+    originalCurrency: "SAR",
     items: [
       {
         id: "oi_10001_1",
@@ -57,6 +59,8 @@ export const MOCK_ESCROW_ORDERS: Order[] = [
     merchantId: "m2",
     status: "SHIPPED",
     totalAmount: 120,
+    originalAmount: 120,
+    originalCurrency: "SAR",
     items: [
       {
         id: "oi_10002_1",

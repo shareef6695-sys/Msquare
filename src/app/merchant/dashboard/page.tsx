@@ -9,26 +9,52 @@ import { loadSession } from "@/services/authStore";
 import { getMerchantById } from "@/services/adminService";
 import { loadOrders, seedOrdersIfEmpty } from "@/services/orderStore";
 import { listProducts } from "@/services/productService";
-import { type Order } from "@/types";
+import { useExchangeRatesUsd } from "@/services/exchangeRateService";
+import { SUPPORTED_CURRENCIES, convertCurrency, formatCurrency } from "@/utils/currencyConverter";
+import { type CurrencyCode, type Order } from "@/types";
+import { AIAssistantWidget } from "@/components/ai/AIAssistantWidget";
 import { FileSearch, Package, ShieldCheck, ShoppingBag } from "lucide-react";
 
-const formatMoney = (amount: number) => {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
+const defaultCurrency = (): CurrencyCode => {
+  const raw = (process.env.NEXT_PUBLIC_DEFAULT_CURRENCY as CurrencyCode | undefined) ?? "SAR";
+  return SUPPORTED_CURRENCIES.includes(raw) ? raw : "SAR";
 };
 
 export default function MerchantDashboardPage() {
   const [merchantId, setMerchantId] = useState<string | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [displayCurrency, setDisplayCurrency] = useState<CurrencyCode>(defaultCurrency());
+  const { loading: ratesLoading, result: ratesResult } = useExchangeRatesUsd();
+  const ratesUsd = ratesResult?.ratesUsd;
 
   useEffect(() => {
     seedOrdersIfEmpty();
     const session = loadSession();
     if (!session || session.user.role !== "MERCHANT") return;
-    setMerchantId(session.user.merchantParentId ?? session.user.id);
+    const id = session.user.merchantParentId ?? session.user.id;
+    setMerchantId(id);
     setOrders(loadOrders());
   }, []);
 
   const merchant = useMemo(() => (merchantId ? getMerchantById(merchantId) : null), [merchantId]);
+
+  useEffect(() => {
+    if (!merchantId || typeof window === "undefined") return;
+    const key = `msquare.currency.merchant.${merchantId}.v1`;
+    const raw = window.localStorage.getItem(key);
+    if (raw && SUPPORTED_CURRENCIES.includes(raw as CurrencyCode)) {
+      setDisplayCurrency(raw as CurrencyCode);
+      return;
+    }
+    const initial = (merchant?.sellingCurrency ?? defaultCurrency()) as CurrencyCode;
+    setDisplayCurrency(initial);
+  }, [merchant, merchantId]);
+
+  useEffect(() => {
+    if (!merchantId || typeof window === "undefined") return;
+    const key = `msquare.currency.merchant.${merchantId}.v1`;
+    window.localStorage.setItem(key, displayCurrency);
+  }, [displayCurrency, merchantId]);
 
   const myOrders = useMemo(() => {
     if (!merchantId) return [];
@@ -41,7 +67,14 @@ export default function MerchantDashboardPage() {
   }, [merchantId]);
 
   const totalOrders = myOrders.length;
-  const totalSales = myOrders.reduce((sum, o) => sum + (o.totalAmount ?? 0), 0);
+  const totalSales = useMemo(() => {
+    if (!ratesUsd) return myOrders.reduce((sum, o) => sum + (o.originalAmount ?? o.totalAmount ?? 0), 0);
+    return myOrders.reduce((sum, o) => {
+      const originalAmount = o.originalAmount ?? o.totalAmount ?? 0;
+      const originalCurrency = (o.originalCurrency ?? merchant?.sellingCurrency ?? defaultCurrency()) as CurrencyCode;
+      return sum + convertCurrency(originalAmount, originalCurrency, displayCurrency, ratesUsd).convertedAmount;
+    }, 0);
+  }, [displayCurrency, merchant?.sellingCurrency, myOrders, ratesUsd]);
   const pendingOrders = myOrders.filter((o) => o.status === "PROCESSING" || o.status === "PAID").length;
   const lcRequests = myOrders.filter((o) => o.paymentMethod === "LC" || o.paymentType === "lc").length;
   const recentOrders = [...myOrders].sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "")).slice(0, 5);
@@ -54,6 +87,21 @@ export default function MerchantDashboardPage() {
           <p className="text-gray-500">Sales, orders, products, and compliance (mock).</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2">
+          <div className="rounded-2xl border border-gray-200/60 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 shadow-sm shadow-gray-900/5">
+            <div className="text-[11px] font-black uppercase tracking-widest text-gray-400">Currency</div>
+            <select
+              value={displayCurrency}
+              onChange={(e) => setDisplayCurrency(e.target.value as CurrencyCode)}
+              className="mt-1 w-full bg-transparent text-sm font-black text-gray-900 focus:outline-none"
+              disabled={!merchantId}
+            >
+              {SUPPORTED_CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
           <Link href="/merchant/products/new">
             <Button>Add product</Button>
           </Link>
@@ -65,7 +113,7 @@ export default function MerchantDashboardPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         {[
-          { label: "Total sales", value: formatMoney(totalSales), icon: <ShieldCheck className="w-5 h-5" /> },
+          { label: "Total sales", value: formatCurrency(totalSales, displayCurrency), icon: <ShieldCheck className="w-5 h-5" /> },
           { label: "Total orders", value: String(totalOrders), icon: <ShoppingBag className="w-5 h-5" /> },
           { label: "Active products", value: String(myProducts.length), icon: <Package className="w-5 h-5" /> },
           { label: "Pending orders", value: String(pendingOrders), icon: <ShoppingBag className="w-5 h-5" /> },
@@ -78,6 +126,19 @@ export default function MerchantDashboardPage() {
               <div className="min-w-0">
                 <div className="text-xs font-semibold text-gray-500 uppercase tracking-widest">{s.label}</div>
                 <div className="text-xl font-black text-gray-900 mt-1 truncate">{s.value}</div>
+                {s.label === "Total sales" && (
+                  <div className="text-[11px] text-gray-500 mt-1">
+                    {ratesLoading ? (
+                      <span>Loading exchange rate…</span>
+                    ) : ratesResult ? (
+                      <span>
+                        Converted using live exchange rate • Last updated: {new Date(ratesResult.updatedAt).toLocaleString()}
+                        {ratesResult.usedFallback ? " • Using last available exchange rate" : ""}
+                        {ratesResult.stale ? " • Rate may be outdated" : ""}
+                      </span>
+                    ) : null}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -109,7 +170,20 @@ export default function MerchantDashboardPage() {
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                       <div className="min-w-0">
                         <div className="text-sm font-black text-gray-900">{o.id}</div>
-                        <div className="text-xs text-gray-500 mt-1">{o.items.length} items • {formatMoney(o.totalAmount)}</div>
+                        {(() => {
+                          const originalAmount = o.originalAmount ?? o.totalAmount ?? 0;
+                          const originalCurrency = (o.originalCurrency ?? merchant?.sellingCurrency ?? defaultCurrency()) as CurrencyCode;
+                          const converted =
+                            ratesUsd && originalCurrency !== displayCurrency
+                              ? convertCurrency(originalAmount, originalCurrency, displayCurrency, ratesUsd).convertedAmount
+                              : null;
+                          return (
+                            <div className="text-xs text-gray-500 mt-1">
+                              {o.items.length} items • {formatCurrency(originalAmount, originalCurrency)}
+                              {converted !== null ? ` ≈ ${formatCurrency(converted, displayCurrency)}` : ""}
+                            </div>
+                          );
+                        })()}
                       </div>
                       <div className="rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-3">
                         <div className="text-xs font-semibold uppercase tracking-widest text-gray-400">Status</div>
@@ -163,6 +237,8 @@ export default function MerchantDashboardPage() {
               </Link>
             </CardContent>
           </Card>
+
+          <AIAssistantWidget />
         </div>
       </div>
     </MerchantLayout>

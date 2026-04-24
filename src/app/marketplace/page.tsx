@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { CheckCircle2 } from "lucide-react";
 import { CUSTOMER_LOGIN_URL, MERCHANT_LOGIN_URL } from "@/constants/links";
 import { MOCK_CATEGORIES } from "@/data/mockCategories";
+import { AISearchBox } from "@/components/ai/AISearchBox";
 import {
   getFeaturedProducts,
   getNewProducts,
@@ -140,6 +141,12 @@ function MarketplaceContent() {
     <div className="bg-gray-50 min-h-screen">
       <MarketplaceHero />
       <CategoryScroll />
+
+      <section className="py-10">
+        <div className="container-max">
+          <AISearchBox />
+        </div>
+      </section>
 
       <section className="py-10">
           <div className="container-max">

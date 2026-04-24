@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/Card';
 import { listProducts } from "@/services/productService";
 import { addToCart } from "@/services/cartStore";
 import { useRouter } from "next/navigation";
+import { AIRecommendationSection } from "@/components/ai/AIRecommendationSection";
 
 export default function ProductDetailsPage({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -179,6 +180,8 @@ export default function ProductDetailsPage({ params }: { params: { id: string } 
             </div>
           </CardContent>
         </Card>
+
+        <AIRecommendationSection productId={product.id} />
       </div>
 
       {toast && (
