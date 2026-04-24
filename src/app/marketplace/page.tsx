@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MarketplaceHero } from "@/features/marketplace/MarketplaceHero";
@@ -20,6 +20,24 @@ import {
 import { ProductCard } from "@/components/ui/ProductCard";
 
 export default function MarketplacePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="bg-gray-50 min-h-screen pt-24 pb-20">
+          <div className="container-max">
+            <div className="rounded-3xl border border-gray-200/60 bg-white p-10 text-sm font-semibold text-gray-600 shadow-sm shadow-gray-900/5">
+              Loading marketplace…
+            </div>
+          </div>
+        </div>
+      }
+    >
+      <MarketplaceContent />
+    </Suspense>
+  );
+}
+
+function MarketplaceContent() {
   const router = useRouter();
   const sp = useSearchParams();
 
