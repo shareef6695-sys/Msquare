@@ -1,12 +1,35 @@
-import React from 'react';
+"use client";
+
+import React, { useMemo, useState } from 'react';
 import Image from 'next/image';
-import { MOCK_PRODUCTS } from '@/data/mockProducts';
 import { Button } from '@/components/ui/Button';
 import { AlertCircle, FileText, Star, MapPin, ShieldCheck, Truck, ShoppingCart } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
+import { listProducts } from "@/services/productService";
+import { addToCart } from "@/services/cartStore";
+import { useRouter } from "next/navigation";
 
 export default function ProductDetailsPage({ params }: { params: { id: string } }) {
-  const product = MOCK_PRODUCTS.find(p => p.id === params.id) || MOCK_PRODUCTS[0];
+  const router = useRouter();
+  const product = useMemo(() => listProducts().find((p) => p.id === params.id) ?? null, [params.id]);
+  const [qty, setQty] = useState<number>(() => Math.max(1, product?.minOrderQuantity ?? 1));
+  const [toast, setToast] = useState<string | null>(null);
+
+  if (!product) {
+    return (
+      <div className="bg-white min-h-screen pt-24 pb-20">
+        <div className="container-max">
+          <div className="rounded-3xl border border-dashed border-gray-200 bg-gray-50 p-12 text-center">
+            <div className="text-lg font-black text-gray-900">Product not found</div>
+            <div className="text-sm text-gray-500 mt-2">Browse the marketplace to discover available items.</div>
+            <Button className="mt-6" onClick={() => router.push("/marketplace")}>
+              Back to Marketplace
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white min-h-screen pt-24 pb-20">
@@ -68,11 +91,37 @@ export default function ProductDetailsPage({ params }: { params: { id: string } 
 
             <div className="flex flex-col sm:flex-row gap-4 mb-10">
               <div className="flex items-center border border-gray-200 rounded-lg">
-                <button className="px-4 py-2 hover:bg-gray-50 transition-colors">-</button>
-                <input type="number" defaultValue={product.minOrderQuantity} className="w-16 text-center focus:outline-none" />
-                <button className="px-4 py-2 hover:bg-gray-50 transition-colors">+</button>
+                <button
+                  type="button"
+                  className="px-4 py-2 hover:bg-gray-50 transition-colors"
+                  onClick={() => setQty((q) => Math.max(product.minOrderQuantity, q - 1))}
+                >
+                  -
+                </button>
+                <input
+                  type="number"
+                  value={qty}
+                  min={product.minOrderQuantity}
+                  onChange={(e) => setQty(Math.max(product.minOrderQuantity, Number(e.target.value)))}
+                  className="w-16 text-center focus:outline-none"
+                />
+                <button
+                  type="button"
+                  className="px-4 py-2 hover:bg-gray-50 transition-colors"
+                  onClick={() => setQty((q) => q + 1)}
+                >
+                  +
+                </button>
               </div>
-              <Button size="lg" className="flex-1 gap-2">
+              <Button
+                size="lg"
+                className="flex-1 gap-2"
+                onClick={() => {
+                  const { replacingMerchant } = addToCart({ productId: product.id, quantity: qty, merchantId: product.merchantId });
+                  setToast(replacingMerchant ? "Cart was updated to a different supplier." : "Added to cart.");
+                  window.setTimeout(() => setToast(null), 2500);
+                }}
+              >
                 <ShoppingCart className="w-5 h-5" />
                 Add to Cart
               </Button>
@@ -131,6 +180,17 @@ export default function ProductDetailsPage({ params }: { params: { id: string } 
           </CardContent>
         </Card>
       </div>
+
+      {toast && (
+        <div className="fixed right-4 top-24 z-[60]">
+          <div className="max-w-sm rounded-2xl border border-gray-200/60 bg-white px-4 py-3 text-sm font-semibold text-gray-900 shadow-lg shadow-gray-900/15">
+            {toast}{" "}
+            <button className="text-primary-700 font-black hover:text-primary-800" onClick={() => router.push("/cart")}>
+              View cart
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

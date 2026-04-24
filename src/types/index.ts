@@ -70,6 +70,22 @@ export interface Order {
   paymentType?: PaymentType;
   tradeAssurance?: boolean;
   insuranceEnabled?: boolean;
+  shipping?: {
+    methodId: string;
+    methodName: string;
+    cost: number;
+    estimatedDays: number;
+  };
+  tracking?: {
+    trackingNumber: string;
+    carrier: string;
+    events: Array<{ status: string; at: string; note?: string }>;
+  };
+  invoices?: {
+    orderInvoiceHtml?: string;
+    proformaInvoiceHtml?: string;
+    generatedAt: string;
+  };
   lcRequestId?: string;
   lcStatus?: LcStatusType;
   disputeStatus?: DisputeStatus;

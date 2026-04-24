@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ArrowRight, Menu, Search, Store, UserRound, X } from 'lucide-react';
 import { Button } from '../ui/Button';
+import { useRouter } from "next/navigation";
 import { 
   NAV_LINKS, 
   MERCHANT_LOGIN_URL, 
@@ -12,8 +13,11 @@ import {
 } from '@/constants/links';
 
 export const Navbar = () => {
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     const handleScroll = () => {
@@ -44,7 +48,7 @@ export const Navbar = () => {
           </Link>
 
           {/* Desktop Nav */}
-          <div className="hidden md:flex items-center gap-8">
+          <div className="hidden md:flex items-center gap-6">
             <Link
               href="/marketplace"
               className="text-sm font-semibold text-gray-900 hover:text-primary-700 transition-colors"
@@ -60,6 +64,31 @@ export const Navbar = () => {
                 {link.label}
               </Link>
             ))}
+            <div className="ml-2 hidden lg:flex items-center gap-2 rounded-full border border-gray-200/60 bg-white px-4 py-2 shadow-sm shadow-gray-900/5">
+              <Search className="w-4 h-4 text-gray-400" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    const q = query.trim();
+                    router.push(q ? `/marketplace?q=${encodeURIComponent(q)}` : "/marketplace");
+                  }
+                }}
+                placeholder="Search products, suppliers…"
+                className="w-64 bg-transparent text-sm font-semibold text-gray-800 placeholder:text-gray-400 focus:outline-none"
+              />
+              <button
+                type="button"
+                className="text-xs font-black text-primary-700 hover:text-primary-800"
+                onClick={() => {
+                  const q = query.trim();
+                  router.push(q ? `/marketplace?q=${encodeURIComponent(q)}` : "/marketplace");
+                }}
+              >
+                Search
+              </button>
+            </div>
           </div>
 
           {/* Desktop Actions */}
@@ -86,7 +115,11 @@ export const Navbar = () => {
 
           {/* Mobile Menu Toggle */}
           <div className="md:hidden flex items-center gap-4">
-            <button className="text-gray-700 hover:text-gray-900 transition-colors">
+            <button
+              className="text-gray-700 hover:text-gray-900 transition-colors"
+              onClick={() => setSearchOpen(true)}
+              aria-label="Search"
+            >
               <Search className="w-5 h-5" />
             </button>
             <button
@@ -139,6 +172,48 @@ export const Navbar = () => {
                 <ArrowRight className="w-4 h-4" />
               </Button>
             </Link>
+          </div>
+        </div>
+      )}
+
+      {searchOpen && (
+        <div className="fixed inset-0 z-[60] flex items-start justify-center px-4 pt-24 md:hidden">
+          <button className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm" onClick={() => setSearchOpen(false)} aria-label="Close" />
+          <div className="relative w-full max-w-lg rounded-3xl border border-gray-200/60 bg-white shadow-xl shadow-gray-900/20">
+            <div className="p-5 border-b border-gray-100/60 flex items-center justify-between">
+              <div className="text-sm font-black text-gray-900">Search</div>
+              <button className="text-gray-400 hover:text-gray-600" onClick={() => setSearchOpen(false)} aria-label="Close">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5">
+              <div className="flex items-center gap-3 rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-3">
+                <Search className="w-4 h-4 text-gray-400" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const q = query.trim();
+                      router.push(q ? `/marketplace?q=${encodeURIComponent(q)}` : "/marketplace");
+                      setSearchOpen(false);
+                    }
+                  }}
+                  placeholder="Search products, suppliers, categories…"
+                  className="w-full bg-transparent text-sm font-semibold text-gray-800 placeholder:text-gray-400 focus:outline-none"
+                />
+              </div>
+              <Button
+                className="w-full mt-4"
+                onClick={() => {
+                  const q = query.trim();
+                  router.push(q ? `/marketplace?q=${encodeURIComponent(q)}` : "/marketplace");
+                  setSearchOpen(false);
+                }}
+              >
+                Search Marketplace
+              </Button>
+            </div>
           </div>
         </div>
       )}

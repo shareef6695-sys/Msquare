@@ -86,6 +86,11 @@ export default function AdminOrdersPage() {
                           Claim {order.insuranceClaimStatus}
                         </span>
                       )}
+                      {(order.totalAmount ?? 0) >= 50000 && (
+                        <span className="inline-flex items-center rounded-full border border-amber-200/70 bg-amber-50 px-3 py-1 text-xs font-black text-amber-900">
+                          Large order
+                        </span>
+                      )}
                     </div>
                     <div className="mt-2 text-xs text-gray-500">
                       Buyer {order.customerId} • Merchant {order.merchantId} • Method{" "}

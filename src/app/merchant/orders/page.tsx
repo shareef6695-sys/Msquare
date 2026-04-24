@@ -5,8 +5,29 @@ import { MerchantLayout } from "@/features/merchant/MerchantLayout";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { markOrderShipped, seedOrdersIfEmpty } from "@/services/orderStore";
+import { requireRole } from "@/services/authStore";
+import { getComplianceConfig, getMerchantById } from "@/services/adminService";
 import { Order } from "@/types";
 import { AlertCircle, PackageCheck, ShieldCheck, Truck } from "lucide-react";
+
+const startOfDayUtc = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+
+const daysUntil = (expiryDate: string, now = new Date()) => {
+  const expiry = new Date(`${expiryDate}T00:00:00.000Z`);
+  const diffMs = startOfDayUtc(expiry) - startOfDayUtc(now);
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+};
+
+const isExpiredInGrace = (
+  doc: { expiryDate: string; overrideExpiry?: string; status?: string },
+  graceDays: number,
+  now = new Date(),
+) => {
+  if (doc.status === "rejected" || doc.status === "under_review") return false;
+  const effective = doc.overrideExpiry ?? doc.expiryDate;
+  const dte = daysUntil(effective, now);
+  return dte < 0 && Math.abs(dte) <= graceDays;
+};
 
 const formatMoney = (amount: number) => {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
@@ -23,9 +44,24 @@ const badgeClass = (status: Order["status"]) => {
 
 export default function MerchantOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [restrictionLevel, setRestrictionLevel] = useState<"warning" | "limited_access" | "payout_hold" | "full_hold">("warning");
+  const [shippingAllowed, setShippingAllowed] = useState(true);
+  const [teamRole, setTeamRole] = useState<"admin" | "manager" | "viewer">("admin");
 
   useEffect(() => {
     setOrders(seedOrdersIfEmpty());
+  }, []);
+
+  useEffect(() => {
+    const gate = requireRole("MERCHANT");
+    if (!gate.ok) return;
+    setTeamRole((gate.session.user.merchantTeamRole ?? "admin") as any);
+    const effectiveMerchantId = gate.session.user.merchantParentId ?? gate.session.user.id;
+    const merchant = getMerchantById(effectiveMerchantId);
+    setRestrictionLevel((merchant?.restrictionLevel ?? "warning") as any);
+    const config = getComplianceConfig();
+    const graceActive = Boolean(merchant?.complianceDocuments?.some((d) => isExpiredInGrace(d, config.gracePeriodDays)));
+    setShippingAllowed(!graceActive || config.limitedOperations.merchant.allowShipping);
   }, []);
 
   const sorted = useMemo(() => {
@@ -125,7 +161,20 @@ export default function MerchantOrdersPage() {
                       <div className="text-base font-black text-gray-900">{formatMoney(order.totalAmount)}</div>
                     </div>
                     {canShip ? (
-                      <Button onClick={() => setOrders(markOrderShipped(order.id))} className="whitespace-nowrap">
+                      <Button
+                        onClick={() => setOrders(markOrderShipped(order.id))}
+                        className="whitespace-nowrap"
+                        disabled={teamRole === "viewer" || restrictionLevel === "full_hold" || !shippingAllowed}
+                        title={
+                          teamRole === "viewer"
+                            ? "Viewer role cannot update shipment status."
+                            : restrictionLevel === "full_hold"
+                            ? "Account on hold due to compliance requirements."
+                            : !shippingAllowed
+                              ? "Shipping is temporarily restricted during the compliance grace period."
+                              : undefined
+                        }
+                      >
                         Mark Shipped
                       </Button>
                     ) : (

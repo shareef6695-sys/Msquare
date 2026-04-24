@@ -3,8 +3,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { AdminLayout } from "@/components/admin/AdminLayout";
 import { Card, CardContent } from "@/components/ui/Card";
-import { seedOrdersIfEmpty } from "@/services/orderStore";
-import { Order } from "@/types";
+import { Button } from "@/components/ui/Button";
+import { sendDashboardNotification } from "@/services/emailService";
+import { getCustomerById, getMerchantById } from "@/services/adminService";
+import { seedOrdersIfEmpty, setOrderDisputeStatus } from "@/services/orderStore";
+import { DisputeStatus, Order } from "@/types";
 import { AlertCircle, Gavel, ShieldCheck } from "lucide-react";
 
 type DisputeRecord = Record<string, { status: string; reason: string; description: string }>;
@@ -12,6 +15,7 @@ type DisputeRecord = Record<string, { status: string; reason: string; descriptio
 export default function AdminDisputesPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [disputes, setDisputes] = useState<DisputeRecord>({});
+  const [toasts, setToasts] = useState<Array<{ id: string; message: string }>>([]);
 
   useEffect(() => {
     setOrders(seedOrdersIfEmpty());
@@ -26,6 +30,54 @@ export default function AdminDisputesPage() {
       if (parsed && typeof parsed === "object") setDisputes(parsed);
     } catch {}
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("msquare.disputes.v1", JSON.stringify(disputes));
+  }, [disputes]);
+
+  const pushToast = (message: string) => {
+    const id = `toast_${Math.random().toString(16).slice(2, 10)}`;
+    setToasts((t) => [...t, { id, message }]);
+    window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3500);
+  };
+
+  const updateDisputeStatus = (orderId: string, nextStatus: DisputeStatus) => {
+    setDisputes((prev) => ({
+      ...prev,
+      [orderId]: {
+        status: nextStatus,
+        reason: prev[orderId]?.reason ?? "Dispute",
+        description: prev[orderId]?.description ?? "",
+      },
+    }));
+    setOrders(setOrderDisputeStatus(orderId, nextStatus));
+
+    const order = orders.find((o) => o.id === orderId);
+    if (order) {
+      const merchantEmail = getMerchantById(order.merchantId)?.email;
+      const customerEmail = getCustomerById(order.customerId)?.email;
+      const message = `Dispute for order ${orderId} updated to ${nextStatus}.`;
+
+      if (merchantEmail) {
+        void sendDashboardNotification({
+          to: merchantEmail,
+          title: "Dispute update",
+          message,
+          meta: { event: "dispute_update", orderId, status: nextStatus },
+        });
+      }
+      if (customerEmail) {
+        void sendDashboardNotification({
+          to: customerEmail,
+          title: "Dispute update",
+          message,
+          meta: { event: "dispute_update", orderId, status: nextStatus },
+        });
+      }
+    }
+    pushToast(`Dispute updated: ${orderId} → ${nextStatus}`);
+  };
 
   const items = useMemo(() => {
     return Object.entries(disputes)
@@ -91,9 +143,43 @@ export default function AdminDisputesPage() {
                 <div className="rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-3 text-sm text-gray-700 whitespace-pre-wrap">
                   {d.description || "No description provided."}
                 </div>
-                <div className="mt-4 text-[11px] font-bold uppercase tracking-widest text-gray-400">UI only</div>
+                <div className="mt-5 flex flex-col sm:flex-row gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => updateDisputeStatus(d.orderId, "UNDER_REVIEW")}
+                    disabled={d.status === "UNDER_REVIEW" || d.status === "RESOLVED" || d.status === "REJECTED"}
+                  >
+                    Mark under review
+                  </Button>
+                  <Button
+                    onClick={() => updateDisputeStatus(d.orderId, "RESOLVED")}
+                    disabled={d.status === "RESOLVED" || d.status === "REJECTED"}
+                  >
+                    Resolve
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => updateDisputeStatus(d.orderId, "REJECTED")}
+                    disabled={d.status === "REJECTED"}
+                  >
+                    Reject
+                  </Button>
+                </div>
               </CardContent>
             </Card>
+          ))}
+        </div>
+      )}
+
+      {toasts.length > 0 && (
+        <div className="fixed right-4 top-4 z-[60] space-y-3">
+          {toasts.map((t) => (
+            <div
+              key={t.id}
+              className="max-w-sm rounded-2xl border border-gray-200/60 bg-white px-4 py-3 text-sm font-semibold text-gray-900 shadow-lg shadow-gray-900/15"
+            >
+              {t.message}
+            </div>
           ))}
         </div>
       )}

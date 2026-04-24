@@ -31,6 +31,8 @@ export type MerchantRegistrationInput = {
   documentFileName?: string;
   emailVerified?: boolean;
   phoneVerified?: boolean;
+  termsAcceptedAt?: string;
+  tradeAssuranceAcceptedAt?: string;
 };
 
 export type CustomerRegistrationInput = {
@@ -41,7 +43,11 @@ export type CustomerRegistrationInput = {
   address?: string;
   emailVerified?: boolean;
   phoneVerified?: boolean;
+  termsAcceptedAt?: string;
+  tradeAssuranceAcceptedAt?: string;
 };
+
+export type MerchantTeamRole = "admin" | "manager" | "viewer";
 
 export type AuthUser = {
   id: string;
@@ -51,6 +57,8 @@ export type AuthUser = {
   phone?: string;
   storeSlug?: string;
   storeName?: string;
+  merchantParentId?: string;
+  merchantTeamRole?: MerchantTeamRole;
 };
 
 type StoredMerchant = MerchantRegistrationInput & {
@@ -69,6 +77,8 @@ type StoredMerchant = MerchantRegistrationInput & {
     riskLevel: RiskLevel;
   };
   createdAt: string;
+  parentMerchantId?: string;
+  teamRole?: MerchantTeamRole;
 };
 type StoredCustomer = CustomerRegistrationInput & {
   id: string;
@@ -90,6 +100,7 @@ const USERS_KEY = "msquare.users.v1";
 const SESSION_KEY = "msquare.session.v1";
 const MERCHANT_SIGNUP_KEY = "msquare.signup.merchant.v1";
 const CUSTOMER_SIGNUP_KEY = "msquare.signup.customer.v1";
+const FAILED_ATTEMPTS_KEY = "msquare.auth.failedAttempts.v1";
 
 const isBrowser = () => typeof window !== "undefined";
 
@@ -115,6 +126,57 @@ const safeJsonParse = <T,>(raw: string | null, fallback: T): T => {
   } catch {
     return fallback;
   }
+};
+
+type FailedAttemptState = Record<string, { count: number; firstAt: string; lastAt: string }>;
+
+const loadFailedAttempts = (): FailedAttemptState => {
+  if (!isBrowser()) return {};
+  return safeJsonParse<FailedAttemptState>(window.localStorage.getItem(FAILED_ATTEMPTS_KEY), {});
+};
+
+const saveFailedAttempts = (state: FailedAttemptState) => {
+  if (!isBrowser()) return;
+  window.localStorage.setItem(FAILED_ATTEMPTS_KEY, JSON.stringify(state));
+};
+
+const recordFailedAuthAttempt = (email: string) => {
+  if (!isBrowser()) return;
+  const key = email.trim().toLowerCase();
+  if (!validateEmail(key)) return;
+  const now = new Date().toISOString();
+  const state = loadFailedAttempts();
+  const prev = state[key];
+  state[key] = prev
+    ? { count: prev.count + 1, firstAt: prev.firstAt, lastAt: now }
+    : { count: 1, firstAt: now, lastAt: now };
+  saveFailedAttempts(state);
+};
+
+const clearFailedAuthAttempts = (email: string) => {
+  if (!isBrowser()) return;
+  const key = email.trim().toLowerCase();
+  const state = loadFailedAttempts();
+  if (!state[key]) return;
+  delete state[key];
+  saveFailedAttempts(state);
+};
+
+export const getFailedAuthAttempts = (email: string) => {
+  const key = email.trim().toLowerCase();
+  const state = loadFailedAttempts();
+  return state[key]?.count ?? 0;
+};
+
+export const hasMultipleFailedAuthAttempts = (email: string, threshold = 3, windowHours = 24) => {
+  const key = email.trim().toLowerCase();
+  const state = loadFailedAttempts();
+  const record = state[key];
+  if (!record) return false;
+  if (record.count < threshold) return false;
+  const last = Date.parse(record.lastAt);
+  if (!Number.isFinite(last)) return false;
+  return Date.now() - last <= windowHours * 60 * 60 * 1000;
 };
 
 const loadUsers = () => {
@@ -186,18 +248,18 @@ const createSessionForUser = (user: AuthUser) => {
 
 type MerchantSignupDraft = {
   step: 1 | 2 | 3 | 4;
-  account: { ownerName: string; email: string; phone: string; password: string };
+  account: { ownerName: string; email: string; phone: string; password: string; termsAcceptedAt: string; tradeAssuranceAcceptedAt: string };
   emailVerification: { code: string; sent: boolean; verified: boolean };
   businessProfile?: Omit<
     MerchantRegistrationInput,
-    "ownerName" | "email" | "phone" | "password" | "emailVerified" | "phoneVerified"
+    "ownerName" | "email" | "phone" | "password" | "emailVerified" | "phoneVerified" | "termsAcceptedAt" | "tradeAssuranceAcceptedAt"
   >;
   submitted?: boolean;
 };
 
 type CustomerSignupDraft = {
   step: 1 | 2 | 3;
-  account: { name: string; email: string; phone: string; password: string; address?: string };
+  account: { name: string; email: string; phone: string; password: string; address?: string; termsAcceptedAt: string; tradeAssuranceAcceptedAt: string };
   emailVerification: { code: string; sent: boolean; verified: boolean };
   submitted?: boolean;
 };
@@ -238,16 +300,33 @@ export const getCustomerSignupDraftByEmail = (email: string) => {
   return draft;
 };
 
-export const startMerchantSignup = (input: { ownerName: string; email: string; phone: string; password: string }) => {
+export const startMerchantSignup = (input: {
+  ownerName: string;
+  email: string;
+  phone: string;
+  password: string;
+  acceptTerms: boolean;
+  acceptTradeAssurance: boolean;
+}) => {
   const email = input.email.trim().toLowerCase();
   if (!input.ownerName.trim()) throw new Error("Name is required.");
   if (!validateEmail(email)) throw new Error("Please enter a valid email address.");
   if (!input.phone.trim()) throw new Error("Phone is required.");
   if (input.password.trim().length < 8) throw new Error("Password must be at least 8 characters.");
+  if (!input.acceptTerms) throw new Error("Please accept the Terms & Conditions.");
+  if (!input.acceptTradeAssurance) throw new Error("Please accept the Trade Assurance policy.");
 
+  const nowIso = new Date().toISOString();
   const draft: MerchantSignupDraft = {
     step: 2,
-    account: { ownerName: input.ownerName.trim(), email, phone: input.phone.trim(), password: input.password },
+    account: {
+      ownerName: input.ownerName.trim(),
+      email,
+      phone: input.phone.trim(),
+      password: input.password,
+      termsAcceptedAt: nowIso,
+      tradeAssuranceAcceptedAt: nowIso,
+    },
     emailVerification: { code: "123456", sent: true, verified: false },
   };
   saveMerchantDraft(draft);
@@ -283,7 +362,7 @@ export const verifyMerchantEmail = (code: string) => {
 export const submitMerchantBusinessProfile = async (
   profile: Omit<
     MerchantRegistrationInput,
-    "ownerName" | "email" | "phone" | "password" | "emailVerified" | "phoneVerified"
+    "ownerName" | "email" | "phone" | "password" | "emailVerified" | "phoneVerified" | "termsAcceptedAt" | "tradeAssuranceAcceptedAt"
   >,
 ) => {
   const draft = loadMerchantDraft();
@@ -298,6 +377,8 @@ export const submitMerchantBusinessProfile = async (
     password: draft.account.password,
     emailVerified: true,
     phoneVerified: false,
+    termsAcceptedAt: draft.account.termsAcceptedAt,
+    tradeAssuranceAcceptedAt: draft.account.tradeAssuranceAcceptedAt,
   });
 
   const next: MerchantSignupDraft = { ...draft, step: 4, submitted: true, businessProfile: profile };
@@ -305,16 +386,35 @@ export const submitMerchantBusinessProfile = async (
   return next;
 };
 
-export const startCustomerSignup = (input: { name: string; email: string; phone: string; password: string; address?: string }) => {
+export const startCustomerSignup = (input: {
+  name: string;
+  email: string;
+  phone: string;
+  password: string;
+  address?: string;
+  acceptTerms: boolean;
+  acceptTradeAssurance: boolean;
+}) => {
   const email = input.email.trim().toLowerCase();
   if (!input.name.trim()) throw new Error("Name is required.");
   if (!validateEmail(email)) throw new Error("Please enter a valid email address.");
   if (!input.phone.trim()) throw new Error("Phone is required.");
   if (input.password.trim().length < 8) throw new Error("Password must be at least 8 characters.");
+  if (!input.acceptTerms) throw new Error("Please accept the Terms & Conditions.");
+  if (!input.acceptTradeAssurance) throw new Error("Please accept the Trade Assurance policy.");
 
+  const nowIso = new Date().toISOString();
   const draft: CustomerSignupDraft = {
     step: 2,
-    account: { name: input.name.trim(), email, phone: input.phone.trim(), password: input.password, address: input.address?.trim() || undefined },
+    account: {
+      name: input.name.trim(),
+      email,
+      phone: input.phone.trim(),
+      password: input.password,
+      address: input.address?.trim() || undefined,
+      termsAcceptedAt: nowIso,
+      tradeAssuranceAcceptedAt: nowIso,
+    },
     emailVerification: { code: "123456", sent: true, verified: false },
   };
   saveCustomerDraft(draft);
@@ -355,6 +455,8 @@ export const verifyCustomerEmailAndCreateAccount = async (code: string) => {
     address: draft.account.address,
     emailVerified: true,
     phoneVerified: false,
+    termsAcceptedAt: draft.account.termsAcceptedAt,
+    tradeAssuranceAcceptedAt: draft.account.tradeAssuranceAcceptedAt,
   });
 
   return next;
@@ -623,69 +725,166 @@ export const loginWithEmail = async (input: { email: string; password: string; r
   if (!validateEmail(email)) throw new Error("Please enter a valid email address.");
   if (!input.password) throw new Error("Password is required.");
 
-  if (input.role === "MERCHANT") {
-    const merchant = users.merchants.find((m) => m.email.toLowerCase() === email);
-    if (!merchant) {
-      const draft = getMerchantSignupDraftByEmail(email);
-      if (draft) {
-        if (!draft.emailVerification.verified) throw new Error("Email verification required. Please verify your email to continue registration.");
-        if (draft.step < 4) throw new Error("Profile completion required. Please complete your business profile.");
+  try {
+    if (input.role === "MERCHANT") {
+      const merchant = users.merchants.find((m) => m.email.toLowerCase() === email);
+      if (!merchant) {
+        const draft = getMerchantSignupDraftByEmail(email);
+        if (draft) {
+          if (!draft.emailVerification.verified) throw new Error("Email verification required. Please verify your email to continue registration.");
+          if (draft.step < 4) throw new Error("Profile completion required. Please complete your business profile.");
+        }
+        throw new Error("No merchant account found for this email.");
       }
-      throw new Error("No merchant account found for this email.");
+      const ok = await verifyPassword(input.password, merchant.passwordHash);
+      if (!ok) throw new Error("Incorrect password.");
+
+      const effectiveMerchantId = merchant.parentMerchantId ?? merchant.id;
+      const verification = getMerchantById(effectiveMerchantId);
+      const status = (verification?.status ?? (merchant as any).status ?? "pending_verification") as MerchantStatus;
+      if (status !== "approved") {
+        const reason = verification?.rejectionReason ?? (merchant as any).rejectionReason;
+        if (status === "rejected") throw new Error(reason ? `Rejected: ${reason}` : "Rejected: Contact support.");
+        if (status === "suspended") throw new Error("Suspended: Contact support.");
+        throw new Error("Pending Verification: Your merchant account is under review.");
+      }
+
+      const session = createSessionForUser({
+        id: merchant.id,
+        role: "MERCHANT",
+        email,
+        name: merchant.ownerName.trim(),
+        phone: merchant.phone.trim(),
+        storeName: (verification?.storeName ?? merchant.storeName).trim(),
+        storeSlug: verification?.storeSlug ?? merchant.storeSlug,
+        merchantParentId: merchant.parentMerchantId,
+        merchantTeamRole: merchant.teamRole,
+      });
+      clearFailedAuthAttempts(email);
+      return { session };
     }
-    const ok = await verifyPassword(input.password, merchant.passwordHash);
+
+    const customer = users.customers.find((c) => c.email.toLowerCase() === email);
+    if (!customer) {
+      const draft = getCustomerSignupDraftByEmail(email);
+      if (draft) {
+        if (!draft.emailVerification.verified) throw new Error("Email verification required. Please verify your email to finish registration.");
+        throw new Error("Account creation in progress. Please refresh and try again.");
+      }
+      throw new Error("No customer account found for this email.");
+    }
+    const ok = await verifyPassword(input.password, customer.passwordHash);
     if (!ok) throw new Error("Incorrect password.");
 
-    const verification = getMerchantById(merchant.id);
-    const status = (verification?.status ?? (merchant as any).status ?? "pending_verification") as MerchantStatus;
+    const verification = getCustomerById(customer.id);
+    const status = (verification?.status ?? (customer as any).status ?? "approved") as CustomerStatus;
     if (status !== "approved") {
-      const reason = verification?.rejectionReason ?? (merchant as any).rejectionReason;
+      const reason = verification?.rejectionReason ?? (customer as any).rejectionReason;
       if (status === "rejected") throw new Error(reason ? `Rejected: ${reason}` : "Rejected: Contact support.");
       if (status === "suspended") throw new Error("Suspended: Contact support.");
-      throw new Error("Pending Verification: Your merchant account is under review.");
+      throw new Error("Pending Verification: Your customer account is under review.");
     }
 
     const session = createSessionForUser({
-      id: merchant.id,
-      role: "MERCHANT",
+      id: customer.id,
+      role: "CUSTOMER",
       email,
-      name: merchant.ownerName.trim(),
-      phone: merchant.phone.trim(),
-      storeName: merchant.storeName.trim(),
-      storeSlug: merchant.storeSlug,
+      name: customer.name.trim(),
+      phone: customer.phone.trim(),
     });
+    clearFailedAuthAttempts(email);
     return { session };
+  } catch (e) {
+    recordFailedAuthAttempt(email);
+    throw e;
   }
+};
 
-  const customer = users.customers.find((c) => c.email.toLowerCase() === email);
-  if (!customer) {
-    const draft = getCustomerSignupDraftByEmail(email);
-    if (draft) {
-      if (!draft.emailVerification.verified) throw new Error("Email verification required. Please verify your email to finish registration.");
-      throw new Error("Account creation in progress. Please refresh and try again.");
-    }
-    throw new Error("No customer account found for this email.");
-  }
-  const ok = await verifyPassword(input.password, customer.passwordHash);
-  if (!ok) throw new Error("Incorrect password.");
+export const listMerchantTeamMembers = (merchantId: string) => {
+  const users = loadUsers();
+  const owner = users.merchants.find((m) => m.id === merchantId);
+  const team = users.merchants
+    .filter((m) => m.parentMerchantId === merchantId)
+    .sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? ""));
 
-  const verification = getCustomerById(customer.id);
-  const status = (verification?.status ?? (customer as any).status ?? "approved") as CustomerStatus;
-  if (status !== "approved") {
-    const reason = verification?.rejectionReason ?? (customer as any).rejectionReason;
-    if (status === "rejected") throw new Error(reason ? `Rejected: ${reason}` : "Rejected: Contact support.");
-    if (status === "suspended") throw new Error("Suspended: Contact support.");
-    throw new Error("Pending Verification: Your customer account is under review.");
-  }
+  const members = [
+    ...(owner
+      ? [
+          {
+            id: owner.id,
+            email: owner.email,
+            name: owner.ownerName,
+            role: "admin" as MerchantTeamRole,
+            isOwner: true,
+            createdAt: owner.createdAt,
+          },
+        ]
+      : []),
+    ...team.map((m) => ({
+      id: m.id,
+      email: m.email,
+      name: m.ownerName,
+      role: (m.teamRole ?? "viewer") as MerchantTeamRole,
+      isOwner: false,
+      createdAt: m.createdAt,
+    })),
+  ];
 
-  const session = createSessionForUser({
-    id: customer.id,
-    role: "CUSTOMER",
+  return members;
+};
+
+export const createMerchantTeamMember = async (input: { merchantId: string; name: string; email: string; role: MerchantTeamRole }) => {
+  const users = loadUsers();
+  const merchantId = input.merchantId.trim();
+  const owner = users.merchants.find((m) => m.id === merchantId);
+  if (!owner) throw new Error("Merchant account not found.");
+
+  const email = input.email.trim().toLowerCase();
+  if (!input.name.trim()) throw new Error("Name is required.");
+  if (!validateEmail(email)) throw new Error("Please enter a valid email address.");
+
+  const emailTaken =
+    users.merchants.some((m) => m.email.toLowerCase() === email) ||
+    users.customers.some((c) => c.email.toLowerCase() === email);
+  if (emailTaken) throw new Error("An account with this email already exists.");
+
+  const id = `tm_${Math.random().toString(16).slice(2, 10)}`;
+  const tempPassword = `Msq${Math.random().toString(16).slice(2, 6)}!${Math.floor(10 + Math.random() * 90)}`;
+  const passwordHash = await hashPassword(tempPassword);
+  const createdAt = new Date().toISOString().slice(0, 10);
+
+  const stored: StoredMerchant = {
+    ...owner,
+    id,
+    ownerName: input.name.trim(),
     email,
-    name: customer.name.trim(),
-    phone: customer.phone.trim(),
+    password: "",
+    passwordHash,
+    parentMerchantId: merchantId,
+    teamRole: input.role,
+    createdAt,
+  };
+
+  users.merchants = [stored, ...users.merchants];
+  saveUsers(users);
+
+  return { id, tempPassword };
+};
+
+export const updateMerchantTeamMemberRole = (input: { merchantId: string; memberId: string; role: MerchantTeamRole }) => {
+  const users = loadUsers();
+  const next = users.merchants.map((m) => {
+    if (m.id === input.memberId && m.parentMerchantId === input.merchantId) return { ...m, teamRole: input.role };
+    return m;
   });
-  return { session };
+  users.merchants = next;
+  saveUsers(users);
+};
+
+export const removeMerchantTeamMember = (input: { merchantId: string; memberId: string }) => {
+  const users = loadUsers();
+  users.merchants = users.merchants.filter((m) => !(m.id === input.memberId && m.parentMerchantId === input.merchantId));
+  saveUsers(users);
 };
 
 export const requireRole = (role: AuthRole) => {

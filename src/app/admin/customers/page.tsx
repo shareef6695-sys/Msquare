@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AdminLayout } from "@/components/admin/AdminLayout";
 import { Card, CardContent } from "@/components/ui/Card";
 import { listCustomers, type CustomerStatus } from "@/services/adminService";
+import { getFailedAuthAttempts, hasMultipleFailedAuthAttempts } from "@/services/authStore";
 import { Search, ShieldCheck, UserRound } from "lucide-react";
 
 const badgeClass = (status: CustomerStatus) => {
@@ -91,6 +92,16 @@ export default function AdminCustomersPage() {
                       <ShieldCheck className="w-4 h-4 text-primary-700" />
                       Risk {c.riskChecks.riskLevel}
                     </span>
+                    {hasMultipleFailedAuthAttempts(c.email) && (
+                      <span className="inline-flex items-center rounded-full border border-amber-200/70 bg-amber-50 px-3 py-1 text-xs font-black text-amber-900">
+                        Failed attempts {getFailedAuthAttempts(c.email)}
+                      </span>
+                    )}
+                    {(!c.complianceDocuments || c.complianceDocuments.length === 0) && (
+                      <span className="inline-flex items-center rounded-full border border-amber-200/70 bg-amber-50 px-3 py-1 text-xs font-black text-amber-900">
+                        Docs missing
+                      </span>
+                    )}
                   </div>
                   <div className="mt-2 text-sm text-gray-600">
                     <span className="font-semibold text-gray-900">{c.email}</span> • {c.phone}
@@ -113,4 +124,3 @@ export default function AdminCustomersPage() {
     </AdminLayout>
   );
 }
-

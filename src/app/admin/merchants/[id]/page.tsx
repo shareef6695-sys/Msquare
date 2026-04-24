@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { AdminLayout } from "@/components/admin/AdminLayout";
@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { appendAdminAuditEvent, getMerchantById, requireAdmin, setMerchantStatus, updateMerchant } from "@/services/adminService";
-import { sendMockEmail } from "@/services/emailService";
+import { sendDashboardNotification, sendMockEmail } from "@/services/emailService";
 import { buildMerchantApprovedEmail, buildMerchantDocumentsRequestedEmail, buildMerchantRejectedEmail } from "@/data/emailTemplates";
 import { AlertTriangle, Banknote, CheckCircle2, FileText, Mail, MapPin, Phone, ShieldCheck } from "lucide-react";
 
@@ -23,8 +23,8 @@ export default function AdminMerchantDetailPage() {
   const router = useRouter();
   const id = params.id;
 
-  const [refreshKey, setRefreshKey] = useState(0);
-  const merchant = useMemo(() => getMerchantById(id), [id, refreshKey]);
+  const [, setRefreshKey] = useState(0);
+  const merchant = getMerchantById(id);
   const [notes, setNotes] = useState(merchant?.notes ?? "");
   const [rejectionReason, setRejectionReason] = useState(merchant?.rejectionReason ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -138,6 +138,12 @@ export default function AdminMerchantDetailPage() {
         actorEmail: adminEmail,
         meta: { emailId: result.id, to: merchant.email, subject: template.subject },
       });
+      await sendDashboardNotification({
+        to: merchant.email,
+        title: "Merchant approved",
+        message: `Your merchant account for ${merchant.businessName} is approved. You can now access the merchant portal.`,
+        meta: { event: "merchant_approved", merchantId: merchant.id },
+      });
 
       setApproveOpen(false);
       setRefreshKey((k) => k + 1);
@@ -175,6 +181,12 @@ export default function AdminMerchantDetailPage() {
         targetId: merchant.id,
         actorEmail: adminEmail,
         meta: { emailId: result.id, to: merchant.email, subject: template.subject },
+      });
+      await sendDashboardNotification({
+        to: merchant.email,
+        title: "Merchant rejected",
+        message: `Your merchant application was rejected. Reason: ${reason}`,
+        meta: { event: "merchant_rejected", merchantId: merchant.id, reason },
       });
 
       setRejectOpen(false);
@@ -217,6 +229,12 @@ export default function AdminMerchantDetailPage() {
         targetId: merchant.id,
         actorEmail: adminEmail,
         meta: { emailId: result.id, to: merchant.email, subject: template.subject },
+      });
+      await sendDashboardNotification({
+        to: merchant.email,
+        title: "Documents required",
+        message: `Additional documents are required: ${documents.join(", ")}.`,
+        meta: { event: "merchant_docs_requested", merchantId: merchant.id, documents },
       });
 
       setDocsOpen(false);

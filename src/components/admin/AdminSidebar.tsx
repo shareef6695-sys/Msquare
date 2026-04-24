@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Banknote, FileText, Gavel, LayoutDashboard, Store, ShieldCheck, Users } from "lucide-react";
+import { AlertTriangle, Banknote, FileText, Gavel, LayoutDashboard, Store, ShieldCheck, Users } from "lucide-react";
 
 const navItems = [
   { label: "Dashboard", href: "/admin/dashboard", icon: <LayoutDashboard className="w-5 h-5" /> },
@@ -13,6 +13,7 @@ const navItems = [
   { label: "Payments", href: "/admin/payments", icon: <Banknote className="w-5 h-5" /> },
   { label: "Disputes", href: "/admin/disputes", icon: <Gavel className="w-5 h-5" /> },
   { label: "LC requests", href: "/admin/lc-requests", icon: <FileText className="w-5 h-5" /> },
+  { label: "Compliance", href: "/admin/compliance", icon: <AlertTriangle className="w-5 h-5" /> },
 ] as const;
 
 export const AdminSidebar = () => {

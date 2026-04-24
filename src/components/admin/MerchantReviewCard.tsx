@@ -2,6 +2,7 @@ import React from "react";
 import Link from "next/link";
 import { type MockMerchant } from "@/data/mockMerchants";
 import { StatusBadge } from "@/components/admin/StatusBadge";
+import { getFailedAuthAttempts, hasMultipleFailedAuthAttempts } from "@/services/authStore";
 import { AlertTriangle, FileText, MapPin, ShieldCheck } from "lucide-react";
 
 const riskStyle = (riskLevel: MockMerchant["riskChecks"]["riskLevel"]) => {
@@ -12,6 +13,8 @@ const riskStyle = (riskLevel: MockMerchant["riskChecks"]["riskLevel"]) => {
 
 export const MerchantReviewCard = ({ merchant }: { merchant: MockMerchant }) => {
   const checks = merchant.riskChecks;
+  const failedCount = getFailedAuthAttempts(merchant.email);
+  const failedFlag = hasMultipleFailedAuthAttempts(merchant.email);
   const missing = [
     !checks.emailVerified ? "Email not verified" : null,
     !checks.phoneVerified ? "Phone not verified" : null,
@@ -30,6 +33,11 @@ export const MerchantReviewCard = ({ merchant }: { merchant: MockMerchant }) => 
             <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-black ${riskStyle(checks.riskLevel)}`}>
               Risk {checks.riskLevel}
             </span>
+            {failedFlag && (
+              <span className="inline-flex items-center rounded-full border border-amber-200/70 bg-amber-50 px-3 py-1 text-xs font-black text-amber-900">
+                Failed attempts {failedCount}
+              </span>
+            )}
           </div>
           <div className="mt-2 text-sm text-gray-600">
             Owner <span className="font-semibold text-gray-900">{merchant.ownerName}</span> •{" "}
@@ -86,4 +94,3 @@ export const MerchantReviewCard = ({ merchant }: { merchant: MockMerchant }) => 
     </div>
   );
 };
-

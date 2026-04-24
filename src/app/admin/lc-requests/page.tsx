@@ -3,8 +3,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { AdminLayout } from "@/components/admin/AdminLayout";
 import { Card, CardContent } from "@/components/ui/Card";
-import { seedOrdersIfEmpty } from "@/services/orderStore";
-import { Order } from "@/types";
+import { Button } from "@/components/ui/Button";
+import { setOrderLcStatus, seedOrdersIfEmpty } from "@/services/orderStore";
+import { sendDashboardNotification } from "@/services/emailService";
+import { getCustomerById, getMerchantById } from "@/services/adminService";
+import { LcStatusType, Order } from "@/types";
 import { FileText, ShieldCheck } from "lucide-react";
 
 type LcUiState = Record<
@@ -26,6 +29,7 @@ export default function AdminLcRequestsPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [lcState, setLcState] = useState<LcUiState>({});
   const [filter, setFilter] = useState<LcFilter>("under_review");
+  const [toasts, setToasts] = useState<Array<{ id: string; message: string }>>([]);
 
   useEffect(() => {
     setOrders(seedOrdersIfEmpty());
@@ -40,6 +44,53 @@ export default function AdminLcRequestsPage() {
       if (parsed && typeof parsed === "object") setLcState(parsed);
     } catch {}
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("msquare.lcState.v1", JSON.stringify(lcState));
+  }, [lcState]);
+
+  const pushToast = (message: string) => {
+    const id = `toast_${Math.random().toString(16).slice(2, 10)}`;
+    setToasts((t) => [...t, { id, message }]);
+    window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3500);
+  };
+
+  const updateLcStatus = async (order: Order, nextStatus: LcStatusType) => {
+    setOrders(setOrderLcStatus(order.id, nextStatus));
+    setLcState((prev) => ({
+      ...prev,
+      [order.id]: {
+        uploaded: prev[order.id]?.uploaded ?? false,
+        status: nextStatus,
+        lastAction: `Set to ${nextStatus}`,
+        fileName: prev[order.id]?.fileName,
+        invoiceUrl: prev[order.id]?.invoiceUrl,
+      },
+    }));
+
+    const merchantEmail = getMerchantById(order.merchantId)?.email;
+    const customerEmail = getCustomerById(order.customerId)?.email;
+    const message = `LC status updated to ${nextStatus} for order ${order.id}.`;
+
+    if (merchantEmail) {
+      void sendDashboardNotification({
+        to: merchantEmail,
+        title: "LC update",
+        message,
+        meta: { event: "lc_update", orderId: order.id, status: nextStatus },
+      });
+    }
+    if (customerEmail) {
+      void sendDashboardNotification({
+        to: customerEmail,
+        title: "LC update",
+        message,
+        meta: { event: "lc_update", orderId: order.id, status: nextStatus },
+      });
+    }
+    pushToast(`LC updated: ${order.id} → ${nextStatus}`);
+  };
 
   const lcOrders = useMemo(() => {
     return orders
@@ -175,13 +226,55 @@ export default function AdminLcRequestsPage() {
                       <div className="mt-4 text-[11px] font-bold uppercase tracking-widest text-gray-400">UI only</div>
                     </div>
                   </div>
+
+                  <div className="mt-6 flex flex-col sm:flex-row gap-3">
+                    <Button
+                      variant="outline"
+                      onClick={() => void updateLcStatus(order, "UNDER_REVIEW")}
+                      disabled={status === "UNDER_REVIEW" || status === "APPROVED" || status === "REJECTED" || status === "SETTLED"}
+                    >
+                      Mark under review
+                    </Button>
+                    <Button
+                      onClick={() => void updateLcStatus(order, "APPROVED")}
+                      disabled={status === "APPROVED" || status === "REJECTED" || status === "SETTLED"}
+                    >
+                      Approve
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => void updateLcStatus(order, "REJECTED")}
+                      disabled={status === "REJECTED" || status === "SETTLED"}
+                    >
+                      Reject
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => void updateLcStatus(order, "SETTLED")}
+                      disabled={status !== "APPROVED"}
+                    >
+                      Mark settled
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             );
           })}
         </div>
       )}
+
+      {toasts.length > 0 && (
+        <div className="fixed right-4 top-4 z-[60] space-y-3">
+          {toasts.map((t) => (
+            <div
+              key={t.id}
+              className="max-w-sm rounded-2xl border border-gray-200/60 bg-white px-4 py-3 text-sm font-semibold text-gray-900 shadow-lg shadow-gray-900/15"
+            >
+              {t.message}
+            </div>
+          ))}
+        </div>
+      )}
     </AdminLayout>
   );
 }
-

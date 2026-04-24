@@ -1,10 +1,13 @@
+"use client";
+
+import React, { useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { MarketplaceHero } from "@/features/marketplace/MarketplaceHero";
 import { CategoryScroll } from "@/features/marketplace/CategoryScroll";
 import { ProductSection } from "@/features/marketplace/ProductSection";
-import { mockProducts } from "@/data/mockProducts";
 import { Button } from "@/components/ui/Button";
 import { CheckCircle2 } from "lucide-react";
-import Link from "next/link";
 import { CUSTOMER_LOGIN_URL, MERCHANT_LOGIN_URL } from "@/constants/links";
 import { MOCK_CATEGORIES } from "@/data/mockCategories";
 import {
@@ -12,9 +15,97 @@ import {
   getNewProducts,
   getRecommendedProducts,
   getTopSellingProducts,
+  listProducts,
 } from "@/services/productService";
+import { ProductCard } from "@/components/ui/ProductCard";
 
 export default function MarketplacePage() {
+  const router = useRouter();
+  const sp = useSearchParams();
+
+  const [draftQ, setDraftQ] = useState(sp.get("q") ?? "");
+  const [draftCategory, setDraftCategory] = useState(sp.get("category") ?? "all");
+  const [draftLocation, setDraftLocation] = useState(sp.get("location") ?? "all");
+  const [draftMinPrice, setDraftMinPrice] = useState(sp.get("minPrice") ?? "");
+  const [draftMaxPrice, setDraftMaxPrice] = useState(sp.get("maxPrice") ?? "");
+  const [draftMoq, setDraftMoq] = useState(sp.get("moq") ?? "");
+  const [draftSort, setDraftSort] = useState(
+    (sp.get("sort") as "newest" | "top_selling" | "price_asc" | "price_desc" | null) ?? "newest",
+  );
+
+  const allProducts = useMemo(() => listProducts(), []);
+  const categoryById = useMemo(() => new Map(MOCK_CATEGORIES.map((c) => [c.id, c])), []);
+
+  const locationOptions = useMemo(() => {
+    return Array.from(new Set(allProducts.map((p) => p.location).filter(Boolean))).sort();
+  }, [allProducts]);
+
+  const applyBrowseParams = (next?: {
+    q?: string;
+    category?: string;
+    location?: string;
+    minPrice?: string;
+    maxPrice?: string;
+    moq?: string;
+    sort?: string;
+  }) => {
+    const params = new URLSearchParams(sp.toString());
+    const setOrClear = (key: string, value: string | undefined, empty = "all") => {
+      const v = (value ?? "").trim();
+      if (!v || v === empty) params.delete(key);
+      else params.set(key, v);
+    };
+    setOrClear("q", next?.q ?? draftQ, "");
+    setOrClear("category", next?.category ?? draftCategory, "all");
+    setOrClear("location", next?.location ?? draftLocation, "all");
+    setOrClear("minPrice", next?.minPrice ?? draftMinPrice, "");
+    setOrClear("maxPrice", next?.maxPrice ?? draftMaxPrice, "");
+    setOrClear("moq", next?.moq ?? draftMoq, "");
+    setOrClear("sort", next?.sort ?? draftSort, "");
+    router.replace(`/marketplace${params.toString() ? `?${params.toString()}` : ""}`);
+  };
+
+  const browseProducts = useMemo(() => {
+    let result = [...allProducts];
+
+    const q = (sp.get("q") ?? "").trim().toLowerCase();
+    const category = (sp.get("category") ?? "").trim().toLowerCase();
+    const location = (sp.get("location") ?? "").trim().toLowerCase();
+    const minPrice = Number(sp.get("minPrice"));
+    const maxPrice = Number(sp.get("maxPrice"));
+    const moq = Number(sp.get("moq"));
+    const sort = (sp.get("sort") ?? "newest") as "newest" | "top_selling" | "price_asc" | "price_desc";
+
+    if (category) {
+      const categoryObj = MOCK_CATEGORIES.find((c) => c.slug === category);
+      const categoryId = categoryObj?.id;
+      if (categoryId) result = result.filter((p) => p.categoryId === categoryId);
+    }
+
+    if (location) {
+      result = result.filter((p) => p.location.toLowerCase() === location);
+    }
+
+    if (!Number.isNaN(minPrice)) result = result.filter((p) => p.price >= minPrice);
+    if (!Number.isNaN(maxPrice)) result = result.filter((p) => p.price <= maxPrice);
+    if (!Number.isNaN(moq)) result = result.filter((p) => p.minOrderQuantity >= moq);
+
+    if (q) {
+      result = result.filter((p) => {
+        const categoryName = categoryById.get(p.categoryId)?.name ?? "";
+        const hay = `${p.name} ${p.merchantName} ${categoryName} ${p.location}`.toLowerCase();
+        return hay.includes(q);
+      });
+    }
+
+    if (sort === "top_selling") result.sort((a, b) => (b.salesCount ?? 0) - (a.salesCount ?? 0));
+    else if (sort === "price_asc") result.sort((a, b) => a.price - b.price);
+    else if (sort === "price_desc") result.sort((a, b) => b.price - a.price);
+    else result.sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime());
+
+    return result;
+  }, [allProducts, categoryById, sp]);
+
   const featuredProducts = getFeaturedProducts();
   const topSellingProducts = getTopSellingProducts().slice(0, 8);
   const newArrivals = getNewProducts().slice(0, 8);
@@ -31,6 +122,144 @@ export default function MarketplacePage() {
     <div className="bg-gray-50 min-h-screen">
       <MarketplaceHero />
       <CategoryScroll />
+
+      <section className="py-10">
+          <div className="container-max">
+            <div className="rounded-3xl border border-gray-200/60 bg-white shadow-sm shadow-gray-900/5 overflow-hidden">
+              <div className="p-6 border-b border-gray-100/60">
+                <div className="text-lg font-black text-gray-900">Browse Products</div>
+                <div className="text-sm text-gray-500 mt-1">Search by product name, category, supplier, and location.</div>
+              </div>
+              <div className="p-6 grid grid-cols-1 lg:grid-cols-12 gap-4">
+                <div className="lg:col-span-4">
+                  <div className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">Search</div>
+                  <input
+                    value={draftQ}
+                    onChange={(e) => setDraftQ(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        applyBrowseParams();
+                      }
+                    }}
+                    className="w-full rounded-2xl border border-gray-200/60 bg-white px-4 py-3 text-sm font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                    placeholder="Product, category, or supplier…"
+                  />
+                </div>
+                <div className="lg:col-span-2">
+                  <div className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">Category</div>
+                  <select
+                    value={draftCategory}
+                    onChange={(e) => setDraftCategory(e.target.value)}
+                    className="w-full rounded-2xl border border-gray-200/60 bg-white px-4 py-3 text-sm font-semibold text-gray-800"
+                  >
+                    <option value="all">All categories</option>
+                    {MOCK_CATEGORIES.map((c) => (
+                      <option key={c.id} value={c.slug}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="lg:col-span-2">
+                  <div className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">Location</div>
+                  <select
+                    value={draftLocation}
+                    onChange={(e) => setDraftLocation(e.target.value)}
+                    className="w-full rounded-2xl border border-gray-200/60 bg-white px-4 py-3 text-sm font-semibold text-gray-800"
+                  >
+                    <option value="all">All locations</option>
+                    {locationOptions.map((l) => (
+                      <option key={l} value={l}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="lg:col-span-1">
+                  <div className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">MOQ</div>
+                  <input
+                    value={draftMoq}
+                    onChange={(e) => setDraftMoq(e.target.value)}
+                    className="w-full rounded-2xl border border-gray-200/60 bg-white px-4 py-3 text-sm font-semibold text-gray-800"
+                    placeholder="Min"
+                    inputMode="numeric"
+                  />
+                </div>
+                <div className="lg:col-span-1">
+                  <div className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">Min</div>
+                  <input
+                    value={draftMinPrice}
+                    onChange={(e) => setDraftMinPrice(e.target.value)}
+                    className="w-full rounded-2xl border border-gray-200/60 bg-white px-4 py-3 text-sm font-semibold text-gray-800"
+                    placeholder="$"
+                    inputMode="decimal"
+                  />
+                </div>
+                <div className="lg:col-span-1">
+                  <div className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">Max</div>
+                  <input
+                    value={draftMaxPrice}
+                    onChange={(e) => setDraftMaxPrice(e.target.value)}
+                    className="w-full rounded-2xl border border-gray-200/60 bg-white px-4 py-3 text-sm font-semibold text-gray-800"
+                    placeholder="$"
+                    inputMode="decimal"
+                  />
+                </div>
+                <div className="lg:col-span-1">
+                  <div className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">Sort</div>
+                  <select
+                    value={draftSort}
+                    onChange={(e) => setDraftSort(e.target.value as any)}
+                    className="w-full rounded-2xl border border-gray-200/60 bg-white px-4 py-3 text-sm font-semibold text-gray-800"
+                  >
+                    <option value="newest">Newest</option>
+                    <option value="top_selling">Top selling</option>
+                    <option value="price_asc">Price: low → high</option>
+                    <option value="price_desc">Price: high → low</option>
+                  </select>
+                </div>
+                <div className="lg:col-span-12 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="text-sm text-gray-600">
+                    Showing <span className="font-black text-gray-900">{browseProducts.length}</span> products
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setDraftQ("");
+                        setDraftCategory("all");
+                        setDraftLocation("all");
+                        setDraftMinPrice("");
+                        setDraftMaxPrice("");
+                        setDraftMoq("");
+                        setDraftSort("newest");
+                        router.replace("/marketplace");
+                      }}
+                    >
+                      Clear
+                    </Button>
+                    <Button onClick={() => applyBrowseParams()}>Apply</Button>
+                  </div>
+                </div>
+              </div>
+              <div className="p-6 border-t border-gray-100/60">
+                {browseProducts.length === 0 ? (
+                  <div className="rounded-3xl border border-dashed border-gray-200 bg-gray-50 p-12 text-center">
+                    <div className="text-lg font-black text-gray-900">No results</div>
+                    <div className="text-sm text-gray-500 mt-2">Try adjusting filters or search keywords.</div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+                    {browseProducts.map((p) => (
+                      <ProductCard key={p.id} product={p} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
       
       <ProductSection 
         title="Featured Products" 
@@ -116,7 +345,7 @@ export default function MarketplacePage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {categorySpotlight.map((cat) => {
-              const products = mockProducts.filter((p) => p.categoryId === cat.id).slice(0, 4);
+              const products = allProducts.filter((p) => p.categoryId === cat.id).slice(0, 4);
               return (
                 <div key={cat.id} className="rounded-3xl border border-gray-200/60 bg-white p-6 shadow-sm shadow-gray-900/5">
                   <div className="flex items-center justify-between mb-5">

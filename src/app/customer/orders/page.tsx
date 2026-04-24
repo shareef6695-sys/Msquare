@@ -5,6 +5,8 @@ import { CustomerLayout } from "@/features/customer/CustomerLayout";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { confirmDeliveryAndRelease, seedOrdersIfEmpty } from "@/services/orderStore";
+import { sendDashboardNotification } from "@/services/emailService";
+import { getCustomerById, getMerchantById } from "@/services/adminService";
 import { Order } from "@/types";
 import { AlertCircle, Banknote, CheckCircle2, Clock, FileDown, FileSearch, ShieldCheck, Truck, Upload } from "lucide-react";
 
@@ -27,6 +29,31 @@ const resolvePaymentType = (order: Order) => {
   if (order.paymentMethod === "LC") return "lc";
   if (order.paymentMethod === "BANK_TRANSFER" || order.paymentMethod === "COD") return "bank";
   return "card";
+};
+
+const openPrintableDocument = (input: { html: string; title: string }) => {
+  const w = window.open("", "_blank", "noopener,noreferrer,width=980,height=720");
+  if (!w) return;
+  w.document.open();
+  w.document.write(input.html);
+  w.document.close();
+  w.document.title = input.title;
+  window.setTimeout(() => {
+    w.focus();
+    w.print();
+  }, 250);
+};
+
+const downloadHtmlDocument = (input: { html: string; filename: string }) => {
+  const blob = new Blob([input.html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = input.filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 };
 
 export default function CustomerOrdersPage() {
@@ -144,6 +171,9 @@ export default function CustomerOrdersPage() {
             const isEscrow = paymentType === "escrow";
             const isLc = paymentType === "lc";
             const isReleased = isEscrow && (order.escrowStatus === "RELEASED" || order.payoutStatus === "RELEASED");
+            const trackingEvents = order.tracking?.events ?? [];
+            const steps = ["Order Placed", "Processing", "Shipped", "Out for Delivery", "Delivered"];
+            const completed = new Set(trackingEvents.map((e) => e.status));
             const lc = lcState[order.id] ?? {
               uploaded: false,
               status: "Draft pending",
@@ -206,6 +236,56 @@ export default function CustomerOrdersPage() {
                           {order.status === "DELIVERED" ? "Delivered" : "Tracking"}
                         </Button>
                       )}
+                      {order.invoices?.orderInvoiceHtml && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="whitespace-nowrap"
+                            onClick={() =>
+                              openPrintableDocument({ html: order.invoices?.orderInvoiceHtml ?? "", title: `Order Invoice - ${order.id}` })
+                            }
+                          >
+                            <FileDown className="w-4 h-4 mr-2" />
+                            Invoice
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="whitespace-nowrap"
+                            onClick={() =>
+                              downloadHtmlDocument({ html: order.invoices?.orderInvoiceHtml ?? "", filename: `MSquare-Order-Invoice-${order.id}.html` })
+                            }
+                          >
+                            Download
+                          </Button>
+                        </>
+                      )}
+                      {isLc && order.invoices?.proformaInvoiceHtml && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="whitespace-nowrap"
+                            onClick={() =>
+                              openPrintableDocument({ html: order.invoices?.proformaInvoiceHtml ?? "", title: `Proforma Invoice - ${order.id}` })
+                            }
+                          >
+                            <FileDown className="w-4 h-4 mr-2" />
+                            Proforma
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="whitespace-nowrap"
+                            onClick={() =>
+                              downloadHtmlDocument({ html: order.invoices?.proformaInvoiceHtml ?? "", filename: `MSquare-Proforma-Invoice-${order.id}.html` })
+                            }
+                          >
+                            Download
+                          </Button>
+                        </>
+                      )}
                       <Button
                         variant="outline"
                         size="sm"
@@ -256,9 +336,65 @@ export default function CustomerOrdersPage() {
                           </div>
                         ))}
                       </div>
+
+                      <div className="mt-6 rounded-3xl border border-gray-200/60 bg-white p-5">
+                        <div className="text-sm font-black text-gray-900 mb-4">Order Tracking</div>
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                          <div className="text-sm font-semibold text-gray-700">
+                            Tracking: <span className="font-black text-gray-900">{order.tracking?.trackingNumber ?? "Pending"}</span>
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            Carrier: <span className="font-semibold text-gray-700">{order.tracking?.carrier ?? "MSquare Logistics"}</span>
+                          </div>
+                        </div>
+                        <div className="mt-5 grid grid-cols-1 sm:grid-cols-5 gap-3">
+                          {steps.map((s) => {
+                            const done =
+                              completed.has(s) ||
+                              (s === "Processing" && (order.status === "PROCESSING" || order.status === "SHIPPED" || order.status === "DELIVERED")) ||
+                              (s === "Shipped" && (order.status === "SHIPPED" || order.status === "DELIVERED")) ||
+                              (s === "Delivered" && order.status === "DELIVERED");
+                            const ts = trackingEvents.find((e) => e.status === s)?.at;
+                            return (
+                              <div key={s} className={`rounded-2xl border px-3 py-3 ${done ? "border-green-200/70 bg-green-50" : "border-gray-200/60 bg-gray-50"}`}>
+                                <div className={`text-xs font-black ${done ? "text-green-800" : "text-gray-700"}`}>{s}</div>
+                                <div className="text-[11px] text-gray-500 mt-1">{ts ? new Date(ts).toLocaleString() : "—"}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="mt-5 space-y-2">
+                          {(trackingEvents.length > 0
+                            ? trackingEvents
+                            : [{ status: "Order Placed", at: `${order.createdAt}T00:00:00.000Z` } as any]
+                          ).map((e: any, idx: number) => (
+                            <div key={`${e.status}-${idx}`} className="rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-3">
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="min-w-0">
+                                  <div className="text-sm font-black text-gray-900">{e.status}</div>
+                                  {e.note && <div className="text-xs text-gray-600 mt-1">{e.note}</div>}
+                                </div>
+                                <div className="text-xs font-semibold text-gray-500 whitespace-nowrap">{new Date(e.at).toLocaleString()}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
 
                     <div className="space-y-4">
+                      <div className="rounded-3xl border border-gray-200/60 bg-white p-5">
+                        <div className="text-sm font-black text-gray-900 mb-4">Shipping Details</div>
+                        <div className="text-sm text-gray-700">
+                          Method: <span className="font-black text-gray-900">{order.shipping?.methodName ?? "Standard"}</span>
+                        </div>
+                        <div className="text-sm text-gray-700 mt-2">
+                          Cost: <span className="font-black text-gray-900">{formatMoney(order.shipping?.cost ?? 0)}</span>
+                        </div>
+                        <div className="text-sm text-gray-700 mt-2">
+                          Estimate: <span className="font-black text-gray-900">{order.shipping?.estimatedDays ?? 6} days</span>
+                        </div>
+                      </div>
                       {isEscrow && (
                         <div className="rounded-3xl border border-gray-200/60 bg-gray-50 p-5">
                           <div className="text-sm font-black text-gray-900 mb-4">Escrow Status</div>
@@ -321,6 +457,25 @@ export default function CustomerOrdersPage() {
                                 onChange={(event) => {
                                   const file = event.target.files?.[0];
                                   if (!file) return;
+                                  const merchantEmail = getMerchantById(order.merchantId)?.email;
+                                  const customerEmail = getCustomerById(order.customerId)?.email;
+                                  const message = `LC documents uploaded for order ${order.id}.`;
+                                  if (merchantEmail) {
+                                    void sendDashboardNotification({
+                                      to: merchantEmail,
+                                      title: "LC update",
+                                      message,
+                                      meta: { event: "lc_upload", orderId: order.id },
+                                    });
+                                  }
+                                  if (customerEmail) {
+                                    void sendDashboardNotification({
+                                      to: customerEmail,
+                                      title: "LC update",
+                                      message,
+                                      meta: { event: "lc_upload", orderId: order.id },
+                                    });
+                                  }
                                   setLcState((prev) => ({
                                     ...prev,
                                     [order.id]: {
@@ -361,21 +516,24 @@ export default function CustomerOrdersPage() {
                             <Button
                               variant="outline"
                               className="w-full justify-start gap-2"
-                              onClick={() =>
+                              onClick={() => {
+                                if (order.invoices?.proformaInvoiceHtml) {
+                                  openPrintableDocument({ html: order.invoices.proformaInvoiceHtml, title: `Proforma Invoice - ${order.id}` });
+                                }
                                 setLcState((prev) => ({
                                   ...prev,
                                   [order.id]: {
                                     uploaded: prev[order.id]?.uploaded ?? false,
                                     status: prev[order.id]?.status ?? "Draft pending",
-                                    lastAction: "Invoice downloaded",
+                                    lastAction: "Proforma invoice opened",
                                     fileName: prev[order.id]?.fileName,
-                                    invoiceUrl: prev[order.id]?.invoiceUrl ?? `/mock/invoices/${order.id}.pdf`,
+                                    invoiceUrl: prev[order.id]?.invoiceUrl,
                                   },
-                                }))
-                              }
+                                }));
+                              }}
                             >
                               <FileDown className="w-4 h-4" />
-                              Download invoice
+                              Proforma invoice
                             </Button>
                           </div>
                           <div className="mt-3 rounded-2xl border border-gray-100 bg-gray-50 px-3 py-2">
@@ -387,16 +545,9 @@ export default function CustomerOrdersPage() {
                               {lc.fileName ? `Uploaded file: ${lc.fileName}` : "Uploaded file: None"}
                             </div>
                             <div className="text-xs text-gray-500 mt-1">
-                              Invoice link:{" "}
-                              {lc.invoiceUrl ? (
-                                <a
-                                  href={lc.invoiceUrl}
-                                  className="text-primary-700 font-semibold hover:underline"
-                                  target="_blank"
-                                  rel="noreferrer"
-                                >
-                                  {lc.invoiceUrl}
-                                </a>
+                              Proforma invoice:{" "}
+                              {order.invoices?.proformaInvoiceHtml ? (
+                                <span className="font-semibold text-gray-700">Available</span>
                               ) : (
                                 "Not generated"
                               )}
@@ -504,6 +655,28 @@ export default function CustomerOrdersPage() {
                           description: draftDisputeDescription,
                         },
                       }));
+                      const o = orders.find((x) => x.id === disputeModalFor);
+                      if (o) {
+                        const merchantEmail = getMerchantById(o.merchantId)?.email;
+                        const customerEmail = getCustomerById(o.customerId)?.email;
+                        const message = `New dispute opened for order ${o.id}.`;
+                        if (merchantEmail) {
+                          void sendDashboardNotification({
+                            to: merchantEmail,
+                            title: "Dispute update",
+                            message,
+                            meta: { event: "dispute_opened", orderId: o.id },
+                          });
+                        }
+                        if (customerEmail) {
+                          void sendDashboardNotification({
+                            to: customerEmail,
+                            title: "Dispute update",
+                            message,
+                            meta: { event: "dispute_opened", orderId: o.id },
+                          });
+                        }
+                      }
                       setDisputeModalFor(null);
                     }}
                   >
@@ -566,6 +739,28 @@ export default function CustomerOrdersPage() {
                           description: draftClaimDescription,
                         },
                       }));
+                      const o = orders.find((x) => x.id === claimModalFor);
+                      if (o) {
+                        const merchantEmail = getMerchantById(o.merchantId)?.email;
+                        const customerEmail = getCustomerById(o.customerId)?.email;
+                        const message = `Insurance claim filed for order ${o.id}.`;
+                        if (merchantEmail) {
+                          void sendDashboardNotification({
+                            to: merchantEmail,
+                            title: "Dispute update",
+                            message,
+                            meta: { event: "claim_opened", orderId: o.id },
+                          });
+                        }
+                        if (customerEmail) {
+                          void sendDashboardNotification({
+                            to: customerEmail,
+                            title: "Dispute update",
+                            message,
+                            meta: { event: "claim_opened", orderId: o.id },
+                          });
+                        }
+                      }
                       setClaimModalFor(null);
                     }}
                   >

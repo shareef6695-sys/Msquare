@@ -19,6 +19,8 @@ export default function MerchantRegisterPage() {
     phone: "",
     password: "",
   });
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [acceptTradeAssurance, setAcceptTradeAssurance] = useState(false);
   const [profile, setProfile] = useState({
     businessName: "",
     country: "Saudi Arabia",
@@ -79,7 +81,7 @@ export default function MerchantRegisterPage() {
             e.preventDefault();
             setError(null);
             try {
-              startMerchantSignup(account);
+              startMerchantSignup({ ...account, acceptTerms, acceptTradeAssurance });
               setCodeSent(true);
               setStep(2);
             } catch (err) {
@@ -131,13 +133,40 @@ export default function MerchantRegisterPage() {
             <div className="mt-2 text-xs text-gray-500">At least 8 characters.</div>
           </div>
 
+          <div className="rounded-2xl border border-gray-200/60 bg-gray-50 px-5 py-4 space-y-3">
+            <label className="flex items-start gap-3 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={acceptTerms}
+                onChange={(e) => setAcceptTerms(e.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              <span>
+                I accept the <span className="font-semibold text-gray-900">Terms & Conditions</span>.
+              </span>
+            </label>
+            <label className="flex items-start gap-3 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={acceptTradeAssurance}
+                onChange={(e) => setAcceptTradeAssurance(e.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              <span>
+                I accept the <span className="font-semibold text-gray-900">Trade Assurance policy</span>.
+              </span>
+            </label>
+          </div>
+
           {error && (
             <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
               {error}
             </div>
           )}
 
-          <Button className="w-full">Continue to Email Verification</Button>
+          <Button className="w-full" disabled={!acceptTerms || !acceptTradeAssurance}>
+            Continue to Email Verification
+          </Button>
 
           <div className="text-center text-sm text-gray-600">
             Already have an account?{" "}

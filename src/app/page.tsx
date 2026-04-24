@@ -1,6 +1,7 @@
 import { Hero } from "@/features/landing/Hero";
 import { Features } from "@/features/landing/Features";
 import { Solutions } from "@/features/landing/Solutions";
+import { TrustedLogos } from "@/features/landing/TrustedLogos";
 import { Button } from "@/components/ui/Button";
 import Link from "next/link";
 import { Banknote, CheckCircle2, CreditCard, PackageCheck, ShieldCheck, ShoppingCart, Truck } from "lucide-react";
@@ -24,11 +25,7 @@ export default function LandingPage() {
           <p className="text-center text-sm font-semibold text-gray-500 uppercase tracking-widest mb-10">
             Trusted by industry leaders worldwide
           </p>
-          <div className="flex flex-wrap justify-center items-center gap-12 md:gap-20 opacity-50 grayscale hover:grayscale-0 transition-all duration-500">
-            {['TechCorp', 'GlobalFlow', 'IndustrialX', 'MarketPro', 'SupplyChain'].map((name) => (
-              <span key={name} className="text-2xl font-black text-gray-900">{name}</span>
-            ))}
-          </div>
+          <TrustedLogos />
         </div>
       </section>
 
