@@ -1,4 +1,4 @@
-export type MerchantStatus = "pending_verification" | "approved" | "rejected" | "suspended";
+export type MerchantStatus = "pending_verification" | "more_documents_required" | "approved" | "rejected" | "suspended";
 export type RiskLevel = "Low" | "Medium" | "High";
 
 export type MockMerchant = {
@@ -20,6 +20,8 @@ export type MockMerchant = {
   status: MerchantStatus;
   rejectionReason?: string;
   notes?: string;
+  documentsRequested?: string[];
+  documentsRequestedAt?: string;
   riskChecks: {
     emailVerified: boolean;
     phoneVerified: boolean;

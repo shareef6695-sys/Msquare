@@ -7,6 +7,7 @@ type AdminSession = { token: string; exp: number; email: string };
 const ADMIN_SESSION_KEY = "msquare.admin.session.v1";
 const MERCHANTS_KEY = "msquare.admin.merchants.v1";
 const CUSTOMERS_KEY = "msquare.admin.customers.v1";
+const AUDIT_LOG_KEY = "msquare.admin.auditLog.v1";
 const USERS_KEY = "msquare.users.v1";
 
 const isBrowser = () => typeof window !== "undefined";
@@ -202,6 +203,47 @@ export const logoutAdmin = () => {
   window.localStorage.removeItem(ADMIN_SESSION_KEY);
 };
 
+export type AdminAuditEventType = "approved" | "rejected" | "documents requested" | "email sent";
+export type AdminAuditEvent = {
+  id: string;
+  type: AdminAuditEventType;
+  targetType: "merchant" | "customer";
+  targetId: string;
+  actorEmail: string;
+  createdAt: string;
+  meta?: Record<string, unknown>;
+};
+
+const loadAuditLogStore = (): AdminAuditEvent[] => {
+  if (!isBrowser()) return [];
+  return safeJsonParse<AdminAuditEvent[]>(window.localStorage.getItem(AUDIT_LOG_KEY), []);
+};
+
+const saveAuditLogStore = (events: AdminAuditEvent[]) => {
+  if (!isBrowser()) return;
+  window.localStorage.setItem(AUDIT_LOG_KEY, JSON.stringify(events));
+};
+
+export const appendAdminAuditEvent = (input: Omit<AdminAuditEvent, "id" | "createdAt">) => {
+  const createdAt = new Date().toISOString();
+  const event: AdminAuditEvent = {
+    id: `audit_${Math.random().toString(16).slice(2, 10)}`,
+    createdAt,
+    ...input,
+  };
+  const existing = loadAuditLogStore();
+  saveAuditLogStore([event, ...existing].slice(0, 500));
+  return event;
+};
+
+export const listAdminAuditEvents = (input?: { targetType?: AdminAuditEvent["targetType"]; targetId?: string; limit?: number }) => {
+  const events = loadAuditLogStore();
+  const targetType = input?.targetType;
+  const targetId = input?.targetId;
+  const filtered = events.filter((e) => (targetType ? e.targetType === targetType : true) && (targetId ? e.targetId === targetId : true));
+  return filtered.slice(0, input?.limit ?? 100);
+};
+
 export const listMerchants = (input?: { query?: string; status?: MerchantStatus | "all" }) => {
   const merchants = loadMerchantsStore();
   const query = input?.query?.trim().toLowerCase();
@@ -262,12 +304,15 @@ export const updateMerchant = (id: string, patch: Partial<MockMerchant>) => {
   return updated;
 };
 
-export const setMerchantStatus = (input: { id: string; status: MerchantStatus; rejectionReason?: string }) => {
+export const setMerchantStatus = (input: { id: string; status: MerchantStatus; rejectionReason?: string; documentsRequested?: string[] }) => {
   const merchant = getMerchantById(input.id);
   if (!merchant) throw new Error("Merchant not found.");
+  const documentsRequested = (input.documentsRequested ?? []).map((d) => d.trim()).filter(Boolean);
   const next: Partial<MockMerchant> = {
     status: input.status,
     rejectionReason: input.status === "rejected" ? input.rejectionReason || "Rejected by admin." : undefined,
+    documentsRequested: input.status === "more_documents_required" ? documentsRequested : undefined,
+    documentsRequestedAt: input.status === "more_documents_required" ? new Date().toISOString() : undefined,
   };
   return updateMerchant(input.id, next);
 };

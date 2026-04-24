@@ -7,7 +7,9 @@ import { AdminLayout } from "@/components/admin/AdminLayout";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/admin/StatusBadge";
-import { getMerchantById, setMerchantStatus, updateMerchant } from "@/services/adminService";
+import { appendAdminAuditEvent, getMerchantById, requireAdmin, setMerchantStatus, updateMerchant } from "@/services/adminService";
+import { sendMockEmail } from "@/services/emailService";
+import { buildMerchantApprovedEmail, buildMerchantDocumentsRequestedEmail, buildMerchantRejectedEmail } from "@/data/emailTemplates";
 import { AlertTriangle, Banknote, CheckCircle2, FileText, Mail, MapPin, Phone, ShieldCheck } from "lucide-react";
 
 const riskPill = (level: string) => {
@@ -21,10 +23,17 @@ export default function AdminMerchantDetailPage() {
   const router = useRouter();
   const id = params.id;
 
-  const merchant = useMemo(() => getMerchantById(id), [id]);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const merchant = useMemo(() => getMerchantById(id), [id, refreshKey]);
   const [notes, setNotes] = useState(merchant?.notes ?? "");
   const [rejectionReason, setRejectionReason] = useState(merchant?.rejectionReason ?? "");
   const [error, setError] = useState<string | null>(null);
+  const [approveOpen, setApproveOpen] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [docsOpen, setDocsOpen] = useState(false);
+  const [docsRequested, setDocsRequested] = useState<string[]>(merchant?.documentsRequested ?? []);
+  const [busy, setBusy] = useState<null | "approve" | "reject" | "docs">(null);
+  const [toasts, setToasts] = useState<Array<{ id: string; message: string }>>([]);
 
   if (!merchant) {
     return (
@@ -40,6 +49,185 @@ export default function AdminMerchantDetailPage() {
       </AdminLayout>
     );
   }
+
+  const pushToast = (message: string) => {
+    const id = `toast_${Math.random().toString(16).slice(2, 10)}`;
+    setToasts((t) => [...t, { id, message }]);
+    window.setTimeout(() => {
+      setToasts((t) => t.filter((x) => x.id !== id));
+    }, 3500);
+  };
+
+  const admin = requireAdmin();
+  const adminEmail = admin.ok ? admin.session.email : "admin@msquare.demo";
+
+  const rejectPresets = [
+    "Incomplete documents submitted",
+    "Commercial registration invalid or missing",
+    "Bank details mismatch with business name",
+    "Unable to verify business information",
+    "High risk / compliance concerns",
+  ] as const;
+
+  const documentOptions = [
+    "Commercial Registration (CR)",
+    "VAT Certificate",
+    "Bank Letter / IBAN Proof",
+    "Owner/Authorized Signatory ID",
+    "Company Profile / Catalog",
+    "Address Proof",
+  ] as const;
+
+  const openDocsModal = () => {
+    const suggested = new Set<string>();
+    if (!merchant.riskChecks.crUploaded) suggested.add("Commercial Registration (CR)");
+    if (!merchant.riskChecks.bankDetailsProvided) suggested.add("Bank Letter / IBAN Proof");
+    if (!merchant.riskChecks.documentsUploaded) suggested.add("Company Profile / Catalog");
+    if (suggested.size === 0 && merchant.documentsRequested?.length) merchant.documentsRequested.forEach((d) => suggested.add(d));
+    setDocsRequested(Array.from(suggested));
+    setDocsOpen(true);
+  };
+
+  const Modal = ({
+    open,
+    title,
+    children,
+    onClose,
+  }: {
+    open: boolean;
+    title: string;
+    children: React.ReactNode;
+    onClose: () => void;
+  }) => {
+    if (!open) return null;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+        <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+        <div
+          className="relative w-full max-w-lg rounded-3xl border border-gray-200/60 bg-white shadow-xl shadow-gray-900/20"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="p-6 border-b border-gray-100/60">
+            <div className="text-lg font-black text-gray-900">{title}</div>
+          </div>
+          <div className="p-6">{children}</div>
+        </div>
+      </div>
+    );
+  };
+
+  const handleApproveConfirm = async () => {
+    setBusy("approve");
+    setError(null);
+    try {
+      setMerchantStatus({ id: merchant.id, status: "approved" });
+      appendAdminAuditEvent({
+        type: "approved",
+        targetType: "merchant",
+        targetId: merchant.id,
+        actorEmail: adminEmail,
+        meta: { previousStatus: merchant.status },
+      });
+
+      const template = buildMerchantApprovedEmail({ businessName: merchant.businessName });
+      const result = await sendMockEmail({ to: merchant.email, template, meta: { merchantId: merchant.id, action: "approved" } });
+      appendAdminAuditEvent({
+        type: "email sent",
+        targetType: "merchant",
+        targetId: merchant.id,
+        actorEmail: adminEmail,
+        meta: { emailId: result.id, to: merchant.email, subject: template.subject },
+      });
+
+      setApproveOpen(false);
+      setRefreshKey((k) => k + 1);
+      pushToast("Approved successfully. Email confirmation sent.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to approve merchant.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleRejectConfirm = async () => {
+    const reason = rejectionReason.trim();
+    if (!reason) {
+      setError("Rejection reason is required.");
+      return;
+    }
+    setBusy("reject");
+    setError(null);
+    try {
+      setMerchantStatus({ id: merchant.id, status: "rejected", rejectionReason: reason });
+      appendAdminAuditEvent({
+        type: "rejected",
+        targetType: "merchant",
+        targetId: merchant.id,
+        actorEmail: adminEmail,
+        meta: { previousStatus: merchant.status, reason },
+      });
+
+      const template = buildMerchantRejectedEmail({ businessName: merchant.businessName, reason });
+      const result = await sendMockEmail({ to: merchant.email, template, meta: { merchantId: merchant.id, action: "rejected", reason } });
+      appendAdminAuditEvent({
+        type: "email sent",
+        targetType: "merchant",
+        targetId: merchant.id,
+        actorEmail: adminEmail,
+        meta: { emailId: result.id, to: merchant.email, subject: template.subject },
+      });
+
+      setRejectOpen(false);
+      setRefreshKey((k) => k + 1);
+      pushToast("Rejected successfully. Reason sent by email.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to reject merchant.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleDocsConfirm = async () => {
+    const documents = docsRequested.map((d) => d.trim()).filter(Boolean);
+    if (documents.length === 0) {
+      setError("Select at least one document to request.");
+      return;
+    }
+    setBusy("docs");
+    setError(null);
+    try {
+      setMerchantStatus({ id: merchant.id, status: "more_documents_required", documentsRequested: documents });
+      appendAdminAuditEvent({
+        type: "documents requested",
+        targetType: "merchant",
+        targetId: merchant.id,
+        actorEmail: adminEmail,
+        meta: { previousStatus: merchant.status, documents },
+      });
+
+      const template = buildMerchantDocumentsRequestedEmail({ businessName: merchant.businessName, documents });
+      const result = await sendMockEmail({
+        to: merchant.email,
+        template,
+        meta: { merchantId: merchant.id, action: "more_documents_required", documents },
+      });
+      appendAdminAuditEvent({
+        type: "email sent",
+        targetType: "merchant",
+        targetId: merchant.id,
+        actorEmail: adminEmail,
+        meta: { emailId: result.id, to: merchant.email, subject: template.subject },
+      });
+
+      setDocsOpen(false);
+      setRefreshKey((k) => k + 1);
+      pushToast("Document request sent successfully.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to request documents.");
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const checks = merchant.riskChecks;
   const items = [
@@ -261,12 +449,7 @@ export default function AdminMerchantDetailPage() {
                 <Button
                   onClick={() => {
                     setError(null);
-                    try {
-                      setMerchantStatus({ id: merchant.id, status: "approved" });
-                      router.refresh();
-                    } catch (e) {
-                      setError(e instanceof Error ? e.message : "Failed to approve merchant.");
-                    }
+                    setApproveOpen(true);
                   }}
                 >
                   Approve
@@ -275,12 +458,7 @@ export default function AdminMerchantDetailPage() {
                   variant="outline"
                   onClick={() => {
                     setError(null);
-                    try {
-                      setMerchantStatus({ id: merchant.id, status: "rejected", rejectionReason });
-                      router.refresh();
-                    } catch (e) {
-                      setError(e instanceof Error ? e.message : "Failed to reject merchant.");
-                    }
+                    setRejectOpen(true);
                   }}
                 >
                   Reject
@@ -289,15 +467,10 @@ export default function AdminMerchantDetailPage() {
                   variant="outline"
                   onClick={() => {
                     setError(null);
-                    try {
-                      setMerchantStatus({ id: merchant.id, status: "suspended" });
-                      router.refresh();
-                    } catch (e) {
-                      setError(e instanceof Error ? e.message : "Failed to suspend merchant.");
-                    }
+                    openDocsModal();
                   }}
                 >
-                  Suspend
+                  Request More Documents
                 </Button>
               </div>
 
@@ -308,7 +481,104 @@ export default function AdminMerchantDetailPage() {
           </Card>
         </div>
       </div>
+
+      <Modal open={approveOpen} title="Approve merchant?" onClose={() => (busy ? null : setApproveOpen(false))}>
+        <div className="text-sm text-gray-700">
+          Approve <span className="font-semibold text-gray-900">{merchant.businessName}</span> and send an email confirmation to{" "}
+          <span className="font-semibold text-gray-900">{merchant.email}</span>.
+        </div>
+        <div className="mt-6 flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+          <Button variant="outline" onClick={() => setApproveOpen(false)} disabled={busy === "approve"}>
+            Cancel
+          </Button>
+          <Button onClick={handleApproveConfirm} disabled={busy === "approve"}>
+            Confirm approval
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal open={rejectOpen} title="Reject merchant" onClose={() => (busy ? null : setRejectOpen(false))}>
+        <div className="text-sm text-gray-700">Select a reason or enter a custom reason. The reason will be emailed to the merchant.</div>
+        <div className="mt-4 grid grid-cols-1 gap-3">
+          <select
+            className="w-full rounded-2xl border border-gray-200/60 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+            value={rejectPresets.includes(rejectionReason as any) ? rejectionReason : ""}
+            onChange={(e) => setRejectionReason(e.target.value)}
+            disabled={busy === "reject"}
+          >
+            <option value="">Select a reason…</option>
+            {rejectPresets.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+          <textarea
+            rows={4}
+            value={rejectionReason}
+            onChange={(e) => setRejectionReason(e.target.value)}
+            className="w-full rounded-2xl border border-gray-200/60 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+            placeholder="Enter custom reason…"
+            disabled={busy === "reject"}
+          />
+        </div>
+        <div className="mt-6 flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+          <Button variant="outline" onClick={() => setRejectOpen(false)} disabled={busy === "reject"}>
+            Cancel
+          </Button>
+          <Button onClick={handleRejectConfirm} disabled={busy === "reject" || rejectionReason.trim().length === 0}>
+            Confirm rejection
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal open={docsOpen} title="Request more documents" onClose={() => (busy ? null : setDocsOpen(false))}>
+        <div className="text-sm text-gray-700">Select the documents required to complete verification. The list will be emailed to the merchant.</div>
+        <div className="mt-4 grid grid-cols-1 gap-2">
+          {documentOptions.map((doc) => {
+            const checked = docsRequested.includes(doc);
+            return (
+              <label
+                key={doc}
+                className="flex items-center justify-between rounded-2xl border border-gray-200/60 bg-white px-4 py-3 text-sm"
+              >
+                <span className="font-semibold text-gray-900">{doc}</span>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(e) => {
+                    const next = e.target.checked ? [...docsRequested, doc] : docsRequested.filter((d) => d !== doc);
+                    setDocsRequested(next);
+                  }}
+                  disabled={busy === "docs"}
+                  className="h-4 w-4"
+                />
+              </label>
+            );
+          })}
+        </div>
+        <div className="mt-6 flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+          <Button variant="outline" onClick={() => setDocsOpen(false)} disabled={busy === "docs"}>
+            Cancel
+          </Button>
+          <Button onClick={handleDocsConfirm} disabled={busy === "docs" || docsRequested.length === 0}>
+            Send request
+          </Button>
+        </div>
+      </Modal>
+
+      {toasts.length > 0 && (
+        <div className="fixed right-4 top-4 z-[60] space-y-3">
+          {toasts.map((t) => (
+            <div
+              key={t.id}
+              className="max-w-sm rounded-2xl border border-gray-200/60 bg-white px-4 py-3 text-sm font-semibold text-gray-900 shadow-lg shadow-gray-900/15"
+            >
+              {t.message}
+            </div>
+          ))}
+        </div>
+      )}
     </AdminLayout>
   );
 }
-
