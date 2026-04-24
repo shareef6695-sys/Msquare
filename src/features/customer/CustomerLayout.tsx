@@ -6,15 +6,16 @@ import { usePathname, useRouter } from 'next/navigation';
 import { 
   User, 
   ShoppingBag, 
+  MapPin,
   LogOut,
   ChevronRight,
   Bell,
   AlertTriangle
 } from 'lucide-react';
-import { logout, requireRole } from "@/services/authStore";
+import { loadSession, logout } from "@/services/authStore";
 import { Button } from '@/components/ui/Button';
 import { type ComplianceDocument } from '@/data/mockMerchants';
-import { getComplianceConfig, getCustomerById, runComplianceCheck, uploadComplianceDocumentReplacement } from '@/services/adminService';
+import { getComplianceConfig, getCustomerById, requireAdmin, runComplianceCheck, uploadComplianceDocumentReplacement } from '@/services/adminService';
 import {
   getUnreadCountForTargets,
   listMockNotificationsForTargets,
@@ -45,6 +46,9 @@ const isExpiredInGrace = (
 const customerMenuItems = [
   { icon: <User className="w-5 h-5" />, label: 'Dashboard', href: '/customer/dashboard' },
   { icon: <ShoppingBag className="w-5 h-5" />, label: 'Orders', href: '/customer/orders' },
+  { icon: <Bell className="w-5 h-5" />, label: 'Notifications', href: '/customer/notifications' },
+  { icon: <MapPin className="w-5 h-5" />, label: 'Addresses', href: '/customer/addresses' },
+  { icon: <User className="w-5 h-5" />, label: 'Profile', href: '/customer/profile' },
 ];
 
 export const CustomerLayout = ({ children }: { children: React.ReactNode }) => {
@@ -71,13 +75,23 @@ export const CustomerLayout = ({ children }: { children: React.ReactNode }) => {
   const [toasts, setToasts] = useState<Array<{ id: string; message: string }>>([]);
 
   useEffect(() => {
-    const gate = requireRole("CUSTOMER");
-    if (!gate.ok) router.replace("/customer-login");
-    else {
-      setCustomerId(gate.session.user.id);
-      setAccountEmail(gate.session.user.email);
-      setAccountPhone(gate.session.user.phone ?? null);
+    const admin = requireAdmin();
+    if (admin.ok) {
+      router.replace("/admin/dashboard");
+      return;
     }
+    const session = loadSession();
+    if (!session) {
+      router.replace("/customer-login");
+      return;
+    }
+    if (session.user.role === "MERCHANT") {
+      router.replace("/merchant/dashboard");
+      return;
+    }
+    setCustomerId(session.user.id);
+    setAccountEmail(session.user.email);
+    setAccountPhone(session.user.phone ?? null);
   }, [router]);
 
   const pushToast = (message: string) => {
@@ -237,6 +251,15 @@ export const CustomerLayout = ({ children }: { children: React.ReactNode }) => {
                             </button>
                           ))
                         )}
+                      </div>
+                      <div className="p-3 border-t border-gray-100/60">
+                        <Link
+                          href="/customer/notifications"
+                          className="block rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-3 text-center text-sm font-black text-gray-900 hover:bg-gray-100 transition-colors"
+                          onClick={() => setNotificationsOpen(false)}
+                        >
+                          View all notifications
+                        </Link>
                       </div>
                     </div>
                   )}

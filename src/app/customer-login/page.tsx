@@ -5,7 +5,8 @@ import { AuthLayout } from '@/components/layout/AuthLayout';
 import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
 import { useRouter } from "next/navigation";
-import { loginWithEmail, seedDemoAccountsIfMissing } from "@/services/authStore";
+import { loadSession, loginWithEmail, seedDemoAccountsIfMissing } from "@/services/authStore";
+import { requireAdmin } from "@/services/adminService";
 
 export default function CustomerLoginPage() {
   const router = useRouter();
@@ -15,8 +16,19 @@ export default function CustomerLoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
+    const admin = requireAdmin();
+    if (admin.ok) {
+      router.replace("/admin/dashboard");
+      return;
+    }
+    const session = loadSession();
+    if (session) {
+      if (session.user.role === "CUSTOMER") router.replace("/customer/dashboard");
+      else if (session.user.role === "MERCHANT") router.replace("/merchant/dashboard");
+      return;
+    }
     seedDemoAccountsIfMissing();
-  }, []);
+  }, [router]);
 
   return (
     <AuthLayout 
@@ -31,7 +43,7 @@ export default function CustomerLoginPage() {
           setIsSubmitting(true);
           try {
             await loginWithEmail({ email, password, role: "CUSTOMER" });
-            router.push("/account");
+            router.push("/customer/dashboard");
           } catch (err) {
             setError(err instanceof Error ? err.message : "Login failed.");
           } finally {
@@ -72,9 +84,7 @@ export default function CustomerLoginPage() {
             <input type="checkbox" className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded" />
             <label className="ml-2 block text-sm text-gray-900">Remember me</label>
           </div>
-          <Link href="/forgot-password" className="text-sm font-medium text-primary-600 hover:text-primary-500">
-            Forgot password?
-          </Link>
+          <span className="text-sm font-medium text-gray-400">Password reset (mock)</span>
         </div>
 
         <Button className="w-full" disabled={isSubmitting}>

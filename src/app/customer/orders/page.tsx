@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { CustomerLayout } from "@/features/customer/CustomerLayout";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -186,7 +187,12 @@ export default function CustomerOrdersPage() {
                 <div className="p-6 border-b border-gray-100/60 flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div className="min-w-0">
                     <div className="flex items-center gap-3">
-                      <div className="text-sm font-black text-gray-900 truncate">{order.id}</div>
+                      <Link
+                        href={`/customer/orders/${order.id}`}
+                        className="text-sm font-black text-gray-900 truncate hover:text-primary-700"
+                      >
+                        {order.id}
+                      </Link>
                       <span
                         className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-black ${badgeClass(
                           order.status,
@@ -236,6 +242,11 @@ export default function CustomerOrdersPage() {
                           {order.status === "DELIVERED" ? "Delivered" : "Tracking"}
                         </Button>
                       )}
+                      <Link href={`/customer/orders/${order.id}`} className="hidden sm:block">
+                        <Button variant="outline" size="sm" className="whitespace-nowrap">
+                          Details
+                        </Button>
+                      </Link>
                       {order.invoices?.orderInvoiceHtml && (
                         <>
                           <Button

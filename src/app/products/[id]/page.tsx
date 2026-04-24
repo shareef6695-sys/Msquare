@@ -185,7 +185,7 @@ export default function ProductDetailsPage({ params }: { params: { id: string } 
         <div className="fixed right-4 top-24 z-[60]">
           <div className="max-w-sm rounded-2xl border border-gray-200/60 bg-white px-4 py-3 text-sm font-semibold text-gray-900 shadow-lg shadow-gray-900/15">
             {toast}{" "}
-            <button className="text-primary-700 font-black hover:text-primary-800" onClick={() => router.push("/cart")}>
+            <button className="text-primary-700 font-black hover:text-primary-800" onClick={() => router.push("/customer/cart")}>
               View cart
             </button>
           </div>

@@ -147,7 +147,7 @@ export default function CartPage() {
                     </div>
                   </div>
                 </div>
-                <Link href="/checkout">
+                <Link href="/customer/checkout">
                   <Button className="w-full py-4 text-lg font-bold group" size="lg" disabled={cartItems.length === 0}>
                     Proceed to Checkout
                     <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />

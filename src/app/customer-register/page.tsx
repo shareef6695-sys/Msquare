@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AuthLayout } from "@/components/layout/AuthLayout";
 import { Button } from "@/components/ui/Button";
-import { resendCustomerVerificationCode, startCustomerSignup, verifyCustomerEmailAndCreateAccount } from "@/services/authStore";
+import { loadSession, resendCustomerVerificationCode, startCustomerSignup, verifyCustomerEmailAndCreateAccount } from "@/services/authStore";
+import { requireAdmin } from "@/services/adminService";
 
 export default function CustomerRegisterPage() {
   const router = useRouter();
@@ -29,6 +30,18 @@ export default function CustomerRegisterPage() {
   useEffect(() => {
     setError(null);
   }, [step]);
+
+  useEffect(() => {
+    const admin = requireAdmin();
+    if (admin.ok) {
+      router.replace("/admin/dashboard");
+      return;
+    }
+    const session = loadSession();
+    if (!session) return;
+    if (session.user.role === "CUSTOMER") router.replace("/customer/dashboard");
+    else if (session.user.role === "MERCHANT") router.replace("/merchant/dashboard");
+  }, [router]);
 
   return (
     <AuthLayout title="Customer Registration" subtitle="Create your buyer account to purchase with confidence">
@@ -247,7 +260,7 @@ export default function CustomerRegisterPage() {
           <Button
             className="w-full"
             onClick={() => {
-              router.push("/account");
+              router.push("/customer/dashboard");
             }}
           >
             Go to Account

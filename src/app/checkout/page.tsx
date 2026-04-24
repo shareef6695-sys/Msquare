@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
 import { 
@@ -18,7 +19,7 @@ import {
 import { createEscrowOrder } from "@/services/orderStore";
 import { Address, PaymentMethod } from "@/types";
 import { loadSession } from "@/services/authStore";
-import { getComplianceConfig, getCustomerById, runComplianceCheck } from "@/services/adminService";
+import { getComplianceConfig, getCustomerById, requireAdmin, runComplianceCheck } from "@/services/adminService";
 import { clearCart, getResolvedCartItems } from "@/services/cartStore";
 
 const startOfDayUtc = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
@@ -56,11 +57,10 @@ const paymentMethods: Array<{
 ];
 
 export default function CheckoutPage() {
+  const router = useRouter();
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('CARD');
   const [includeInsurance, setIncludeInsurance] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isOrdered, setIsOrdered] = useState(false);
-  const [orderId, setOrderId] = useState<string | null>(null);
   const [restricted, setRestricted] = useState(false);
   const [holdMessage, setHoldMessage] = useState<string | null>(null);
   const [graceWarning, setGraceWarning] = useState<string | null>(null);
@@ -83,8 +83,20 @@ export default function CheckoutPage() {
   const orderTotal = itemsTotal + tax + shippingFee + insuranceFee;
 
   useEffect(() => {
+    const admin = requireAdmin();
+    if (admin.ok) {
+      router.replace("/admin/dashboard");
+      return;
+    }
     const session = loadSession();
-    if (!session || session.user.role !== "CUSTOMER") return;
+    if (!session) {
+      router.replace("/customer-login");
+      return;
+    }
+    if (session.user.role === "MERCHANT") {
+      router.replace("/merchant/dashboard");
+      return;
+    }
     const id = session.user.id;
     setCustomerId(id);
     const customer = getCustomerById(id);
@@ -106,7 +118,7 @@ export default function CheckoutPage() {
       );
       setHoldMessage(refreshed.complianceHoldReason ?? (blocked ? "Your account requires document update before purchase." : null));
     });
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     if (!customerId || typeof window === "undefined") return;
@@ -163,88 +175,17 @@ export default function CheckoutPage() {
           shippingAddress,
         });
         clearCart();
-        setOrderId(created.id);
+        try {
+          window.localStorage.setItem("msquare.lastOrderId.v1", created.id);
+        } catch {}
         setIsProcessing(false);
-        setIsOrdered(true);
+        router.push(`/customer/order-confirmation?orderId=${encodeURIComponent(created.id)}`);
       } catch (e) {
         setIsProcessing(false);
         setOrderError(e instanceof Error ? e.message : "Failed to place order.");
       }
     }, 2000);
   };
-
-  if (isOrdered) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center p-4 pt-24">
-        <div className="max-w-2xl w-full">
-          <div className="text-center">
-          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-8 animate-bounce">
-            <CheckCircle2 className="w-10 h-10 text-green-600" />
-          </div>
-          <h1 className="text-3xl font-black text-gray-900 mb-4">Order Confirmed!</h1>
-          <p className="text-gray-500 mb-10 text-lg">
-            Your order <span className="font-bold text-gray-900">#{orderId ?? "ORD-00000"}</span> has been placed successfully.
-            We’ve sent a confirmation email to your registered address.
-          </p>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardContent className="p-6">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-primary-50 border border-primary-200/60 flex items-center justify-center text-primary-700">
-                    <ShieldCheck className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="text-lg font-black text-gray-900">MSquare Escrow</div>
-                    <div className="text-sm text-gray-500 mt-1">
-                      Your payment is held securely until you confirm delivery. Then the funds are released to the merchant.
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-6 space-y-3">
-                  {[
-                    { title: "Payment goes to MSquare escrow", icon: <Banknote className="w-4 h-4" /> },
-                    { title: "Merchant ships the product", icon: <Truck className="w-4 h-4" /> },
-                    { title: "You confirm delivery", icon: <CheckCircle2 className="w-4 h-4" /> },
-                    { title: "Money released to merchant", icon: <ShieldCheck className="w-4 h-4" /> },
-                  ].map((step) => (
-                    <div
-                      key={step.title}
-                      className="flex items-center gap-3 rounded-2xl border border-gray-200/60 bg-white px-4 py-3"
-                    >
-                      <div className="w-8 h-8 rounded-xl bg-gray-50 border border-gray-200/60 flex items-center justify-center text-gray-600">
-                        {step.icon}
-                      </div>
-                      <div className="text-sm font-semibold text-gray-900">{step.title}</div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-6">
-                <div className="text-lg font-black text-gray-900 mb-2">Next steps</div>
-                <div className="text-sm text-gray-500 mb-6">
-                  Track the shipment and confirm delivery once the order arrives.
-                </div>
-                <div className="space-y-3">
-                  <Link href="/customer/orders" className="block">
-                    <Button className="w-full py-4 text-lg font-bold">Track My Order</Button>
-                  </Link>
-                  <Link href="/marketplace" className="block">
-                    <Button variant="outline" className="w-full py-4 text-lg font-bold">Back to Marketplace</Button>
-                  </Link>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="bg-gray-50 min-h-screen pt-24 pb-20">
