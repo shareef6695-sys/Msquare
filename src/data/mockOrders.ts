@@ -1,0 +1,95 @@
+import { Order } from "@/types";
+
+export const mockOrders = [
+  {
+    id: "o1",
+    customer: "Ahmed Ali",
+    total: 500,
+    status: "Processing",
+    createdAt: "2026-04-01",
+  },
+  {
+    id: "o2",
+    customer: "Sara Khan",
+    total: 120,
+    status: "Shipped",
+    createdAt: "2026-04-05",
+  },
+] as const;
+
+export const MOCK_ESCROW_ORDERS: Order[] = [
+  {
+    id: "ORD-10001",
+    customerId: "cust_ahmed_ali",
+    merchantId: "m1",
+    status: "PROCESSING",
+    totalAmount: 500,
+    items: [
+      {
+        id: "oi_10001_1",
+        productId: "p1",
+        productName: "Industrial Drill Machine (Bench)",
+        price: 250,
+        quantity: 2,
+      },
+    ],
+    paymentMethod: "ESCROW",
+    paymentType: "escrow",
+    tradeAssurance: true,
+    paymentStatus: "COMPLETED",
+    escrowStatus: "HELD",
+    payoutStatus: "ON_HOLD",
+    disputeStatus: "NONE",
+    insuranceClaimStatus: "NONE",
+    createdAt: "2026-04-01",
+    shippingAddress: {
+      id: "addr_10001",
+      street: "King Fahd Rd",
+      city: "Jeddah",
+      state: "Makkah",
+      zipCode: "00000",
+      country: "Saudi Arabia",
+    },
+  },
+  {
+    id: "ORD-10002",
+    customerId: "cust_sara_khan",
+    merchantId: "m2",
+    status: "SHIPPED",
+    totalAmount: 120,
+    items: [
+      {
+        id: "oi_10002_1",
+        productId: "p2",
+        productName: "Wireless Headphones",
+        price: 80,
+        quantity: 1,
+      },
+      {
+        id: "oi_10002_2",
+        productId: "p8",
+        productName: "Cat6 Ethernet Cable (305m Box)",
+        price: 58,
+        quantity: 1,
+      },
+    ],
+    paymentMethod: "ESCROW",
+    paymentType: "escrow",
+    tradeAssurance: true,
+    paymentStatus: "COMPLETED",
+    escrowStatus: "HELD",
+    payoutStatus: "ON_HOLD",
+    disputeStatus: "NONE",
+    insuranceEnabled: true,
+    insuranceClaimStatus: "NONE",
+    createdAt: "2026-04-05",
+    shippingAddress: {
+      id: "addr_10002",
+      street: "Olaya St",
+      city: "Riyadh",
+      state: "Riyadh",
+      zipCode: "00000",
+      country: "Saudi Arabia",
+    },
+  },
+];

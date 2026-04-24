@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { 
   LayoutDashboard, 
   Menu,
@@ -11,10 +11,12 @@ import {
   Users, 
   CreditCard, 
   Settings, 
+  FileText,
   LogOut,
   Bell,
   Search
 } from 'lucide-react';
+import { logout, requireRole } from "@/services/authStore";
 
 const menuItems = [
   { icon: <LayoutDashboard className="w-5 h-5" />, label: 'Dashboard', href: '/merchant/dashboard' },
@@ -22,16 +24,23 @@ const menuItems = [
   { icon: <ShoppingCart className="w-5 h-5" />, label: 'Orders', href: '/merchant/orders' },
   { icon: <Users className="w-5 h-5" />, label: 'Customers', href: '/merchant/customers' },
   { icon: <CreditCard className="w-5 h-5" />, label: 'Payments', href: '/merchant/payments' },
+  { icon: <FileText className="w-5 h-5" />, label: 'Trade Finance', href: '/merchant/trade-finance' },
   { icon: <Settings className="w-5 h-5" />, label: 'Settings', href: '/merchant/settings' },
 ];
 
 export const MerchantLayout = ({ children }: { children: React.ReactNode }) => {
   const pathname = usePathname();
+  const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     setSidebarOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    const gate = requireRole("MERCHANT");
+    if (!gate.ok) router.replace("/merchant-login");
+  }, [router]);
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
@@ -81,7 +90,13 @@ export const MerchantLayout = ({ children }: { children: React.ReactNode }) => {
         </nav>
 
         <div className="p-4 border-t border-gray-100/60">
-          <button className="flex items-center gap-3 px-4 py-3 w-full text-sm font-semibold text-gray-700 hover:bg-red-50 hover:text-red-700 rounded-2xl transition-colors">
+          <button
+            className="flex items-center gap-3 px-4 py-3 w-full text-sm font-semibold text-gray-700 hover:bg-red-50 hover:text-red-700 rounded-2xl transition-colors"
+            onClick={() => {
+              logout();
+              router.replace("/merchant-login");
+            }}
+          >
             <LogOut className="w-5 h-5" />
             Logout
           </button>

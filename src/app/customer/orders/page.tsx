@@ -1,0 +1,582 @@
+"use client";
+
+import React, { useEffect, useMemo, useState } from "react";
+import { CustomerLayout } from "@/features/customer/CustomerLayout";
+import { Card, CardContent } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { confirmDeliveryAndRelease, seedOrdersIfEmpty } from "@/services/orderStore";
+import { Order } from "@/types";
+import { AlertCircle, Banknote, CheckCircle2, Clock, FileDown, FileSearch, ShieldCheck, Truck, Upload } from "lucide-react";
+
+const formatMoney = (amount: number) => {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
+};
+
+const badgeClass = (status: Order["status"]) => {
+  if (status === "DELIVERED") return "bg-green-50 text-green-700 border-green-200/70";
+  if (status === "SHIPPED") return "bg-blue-50 text-blue-700 border-blue-200/70";
+  if (status === "PROCESSING") return "bg-amber-50 text-amber-800 border-amber-200/70";
+  if (status === "PAID") return "bg-indigo-50 text-indigo-700 border-indigo-200/70";
+  if (status === "CANCELLED") return "bg-red-50 text-red-700 border-red-200/70";
+  return "bg-gray-50 text-gray-700 border-gray-200/70";
+};
+
+const resolvePaymentType = (order: Order) => {
+  if (order.paymentType) return order.paymentType;
+  if (order.paymentMethod === "ESCROW") return "escrow";
+  if (order.paymentMethod === "LC") return "lc";
+  if (order.paymentMethod === "BANK_TRANSFER" || order.paymentMethod === "COD") return "bank";
+  return "card";
+};
+
+export default function CustomerOrdersPage() {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [lcState, setLcState] = useState<
+    Record<
+      string,
+      { uploaded: boolean; status: string; lastAction?: string; fileName?: string; invoiceUrl?: string }
+    >
+  >({});
+  const [disputeState, setDisputeState] = useState<Record<string, { status: string; reason: string; description: string }>>(
+    {},
+  );
+  const [claimState, setClaimState] = useState<Record<string, { status: string; amount: string; description: string }>>(
+    {},
+  );
+  const [disputeModalFor, setDisputeModalFor] = useState<string | null>(null);
+  const [claimModalFor, setClaimModalFor] = useState<string | null>(null);
+  const [draftDisputeReason, setDraftDisputeReason] = useState("Delivery issue");
+  const [draftDisputeDescription, setDraftDisputeDescription] = useState("");
+  const [draftClaimAmount, setDraftClaimAmount] = useState("");
+  const [draftClaimDescription, setDraftClaimDescription] = useState("");
+
+  useEffect(() => {
+    setOrders(seedOrdersIfEmpty());
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem("msquare.lcState.v1");
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as Record<
+        string,
+        { uploaded: boolean; status: string; lastAction?: string; fileName?: string; invoiceUrl?: string }
+      >;
+      if (parsed && typeof parsed === "object") {
+        setLcState(parsed);
+      }
+    } catch {
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("msquare.lcState.v1", JSON.stringify(lcState));
+  }, [lcState]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem("msquare.disputes.v1");
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as Record<string, { status: string; reason: string; description: string }>;
+      if (parsed && typeof parsed === "object") setDisputeState(parsed);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("msquare.disputes.v1", JSON.stringify(disputeState));
+  }, [disputeState]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem("msquare.insuranceClaims.v1");
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as Record<string, { status: string; amount: string; description: string }>;
+      if (parsed && typeof parsed === "object") setClaimState(parsed);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("msquare.insuranceClaims.v1", JSON.stringify(claimState));
+  }, [claimState]);
+
+  const sorted = useMemo(() => {
+    return [...orders].sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+  }, [orders]);
+
+  return (
+    <CustomerLayout>
+      <div className="mb-8 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight text-gray-900">My Orders</h1>
+          <p className="text-gray-500">
+            Track shipments and confirm delivery to release escrow payments to suppliers.
+          </p>
+        </div>
+        <div className="inline-flex items-center gap-2 rounded-full border border-gray-200/60 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm shadow-gray-900/5">
+          <ShieldCheck className="w-4 h-4 text-primary-700" />
+          MSquare Escrow Protection
+        </div>
+      </div>
+
+      <div className="space-y-6">
+        {sorted.length === 0 ? (
+          <Card>
+            <CardContent className="p-10 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-gray-50 border border-gray-200/60 flex items-center justify-center mx-auto text-gray-400">
+                <Clock className="w-7 h-7" />
+              </div>
+              <div className="mt-5 text-lg font-black text-gray-900">No orders yet</div>
+              <p className="mt-2 text-sm text-gray-500">
+                Your orders will appear here once you place an order from the marketplace.
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          sorted.map((order) => {
+            const isAwaitingConfirmation = order.status === "SHIPPED";
+            const paymentType = resolvePaymentType(order);
+            const isEscrow = paymentType === "escrow";
+            const isLc = paymentType === "lc";
+            const isReleased = isEscrow && (order.escrowStatus === "RELEASED" || order.payoutStatus === "RELEASED");
+            const lc = lcState[order.id] ?? {
+              uploaded: false,
+              status: "Draft pending",
+            };
+            const dispute = disputeState[order.id];
+            const claim = claimState[order.id];
+
+            return (
+              <Card key={order.id} className="overflow-hidden">
+                <div className="p-6 border-b border-gray-100/60 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-3">
+                      <div className="text-sm font-black text-gray-900 truncate">{order.id}</div>
+                      <span
+                        className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-black ${badgeClass(
+                          order.status,
+                        )}`}
+                      >
+                        {order.status}
+                      </span>
+                      {order.tradeAssurance && (
+                        <span className="inline-flex items-center rounded-full border border-primary-200/70 bg-primary-50 px-3 py-1 text-xs font-black text-primary-800">
+                          Trade Assurance
+                        </span>
+                      )}
+                      {order.insuranceEnabled && (
+                        <span className="inline-flex items-center rounded-full border border-emerald-200/70 bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-800">
+                          Insured
+                        </span>
+                      )}
+                      {dispute?.status === "OPEN" && (
+                        <span className="inline-flex items-center rounded-full border border-amber-200/70 bg-amber-50 px-3 py-1 text-xs font-black text-amber-800">
+                          Dispute Open
+                        </span>
+                      )}
+                      {claim?.status === "OPEN" && (
+                        <span className="inline-flex items-center rounded-full border border-amber-200/70 bg-amber-50 px-3 py-1 text-xs font-black text-amber-800">
+                          Claim Open
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-2 text-xs text-gray-500">
+                      Placed on {order.createdAt} • {order.items.length} items • Payment:{" "}
+                      <span className="font-semibold text-gray-700">{order.paymentMethod}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between md:justify-end gap-6">
+                    <div className="text-right">
+                      <div className="text-xs text-gray-500">Total</div>
+                      <div className="text-base font-black text-gray-900">{formatMoney(order.totalAmount)}</div>
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      {isAwaitingConfirmation ? (
+                        <Button onClick={() => setOrders(confirmDeliveryAndRelease(order.id))} className="whitespace-nowrap">
+                          Confirm Delivery
+                        </Button>
+                      ) : (
+                        <Button variant="outline" className="whitespace-nowrap" disabled>
+                          {order.status === "DELIVERED" ? "Delivered" : "Tracking"}
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="whitespace-nowrap"
+                        onClick={() => {
+                          setDraftDisputeDescription("");
+                          setDisputeModalFor(order.id);
+                        }}
+                      >
+                        Open Dispute
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="whitespace-nowrap"
+                        disabled={!order.insuranceEnabled}
+                        onClick={() => {
+                          setDraftClaimAmount("");
+                          setDraftClaimDescription("");
+                          setClaimModalFor(order.id);
+                        }}
+                      >
+                        File Claim
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                <CardContent className="p-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="lg:col-span-2">
+                      <div className="text-sm font-black text-gray-900 mb-3">Order Items</div>
+                      <div className="space-y-3">
+                        {order.items.map((item) => (
+                          <div
+                            key={item.id}
+                            className="rounded-2xl border border-gray-200/60 bg-white px-4 py-3 flex items-center justify-between gap-4"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-gray-900 truncate">{item.productName}</div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                Qty {item.quantity} • {formatMoney(item.price)}
+                              </div>
+                            </div>
+                            <div className="text-sm font-black text-gray-900">
+                              {formatMoney(item.price * item.quantity)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      {isEscrow && (
+                        <div className="rounded-3xl border border-gray-200/60 bg-gray-50 p-5">
+                          <div className="text-sm font-black text-gray-900 mb-4">Escrow Status</div>
+
+                          <div className="space-y-3">
+                            <div className="flex items-start gap-3">
+                              <div className="w-9 h-9 rounded-2xl bg-white border border-gray-200/60 flex items-center justify-center text-gray-600">
+                                <Banknote className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <div className="text-sm font-semibold text-gray-900">Payment held by MSquare</div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                  Funds stay in escrow until you confirm delivery.
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-start gap-3">
+                              <div className="w-9 h-9 rounded-2xl bg-white border border-gray-200/60 flex items-center justify-center text-gray-600">
+                                <Truck className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <div className="text-sm font-semibold text-gray-900">Supplier ships the product</div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                  Shipment status updates as the order moves.
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-start gap-3">
+                              <div
+                                className={`w-9 h-9 rounded-2xl bg-white border flex items-center justify-center ${
+                                  isReleased ? "border-green-200/70 text-green-700" : "border-gray-200/60 text-gray-600"
+                                }`}
+                              >
+                                <CheckCircle2 className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <div className="text-sm font-semibold text-gray-900">Release to supplier</div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                  {isReleased
+                                    ? "Released to the supplier after delivery confirmation."
+                                    : "Pending your delivery confirmation."}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {isLc && (
+                        <div className="rounded-3xl border border-gray-200/60 bg-white p-5">
+                          <div className="text-sm font-black text-gray-900 mb-4">LC Workflow</div>
+                          <div className="space-y-3">
+                            <div className="w-full">
+                              <input
+                                id={`lc-upload-${order.id}`}
+                                type="file"
+                                className="hidden"
+                                onChange={(event) => {
+                                  const file = event.target.files?.[0];
+                                  if (!file) return;
+                                  setLcState((prev) => ({
+                                    ...prev,
+                                    [order.id]: {
+                                      uploaded: true,
+                                      status: "Documents uploaded",
+                                      lastAction: "LC uploaded",
+                                      fileName: file.name,
+                                      invoiceUrl: prev[order.id]?.invoiceUrl,
+                                    },
+                                  }));
+                                }}
+                              />
+                              <label
+                                htmlFor={`lc-upload-${order.id}`}
+                                className="flex w-full items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:border-gray-300 hover:bg-gray-50 cursor-pointer"
+                              >
+                                <Upload className="w-4 h-4" />
+                                Upload LC
+                              </label>
+                            </div>
+                            <Button
+                              variant="outline"
+                              className="w-full justify-start gap-2"
+                              onClick={() =>
+                                setLcState((prev) => ({
+                                  ...prev,
+                                  [order.id]: {
+                                    uploaded: prev[order.id]?.uploaded ?? false,
+                                    status: prev[order.id]?.uploaded ? "Under bank review" : "Awaiting documents",
+                                    lastAction: "Status checked",
+                                  },
+                                }))
+                              }
+                            >
+                              <FileSearch className="w-4 h-4" />
+                              Track LC status
+                            </Button>
+                            <Button
+                              variant="outline"
+                              className="w-full justify-start gap-2"
+                              onClick={() =>
+                                setLcState((prev) => ({
+                                  ...prev,
+                                  [order.id]: {
+                                    uploaded: prev[order.id]?.uploaded ?? false,
+                                    status: prev[order.id]?.status ?? "Draft pending",
+                                    lastAction: "Invoice downloaded",
+                                    fileName: prev[order.id]?.fileName,
+                                    invoiceUrl: prev[order.id]?.invoiceUrl ?? `/mock/invoices/${order.id}.pdf`,
+                                  },
+                                }))
+                              }
+                            >
+                              <FileDown className="w-4 h-4" />
+                              Download invoice
+                            </Button>
+                          </div>
+                          <div className="mt-3 rounded-2xl border border-gray-100 bg-gray-50 px-3 py-2">
+                            <div className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">
+                              LC Status
+                            </div>
+                            <div className="text-sm font-semibold text-gray-800">{lc.status}</div>
+                            <div className="text-xs text-gray-500 mt-2">
+                              {lc.fileName ? `Uploaded file: ${lc.fileName}` : "Uploaded file: None"}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              Invoice link:{" "}
+                              {lc.invoiceUrl ? (
+                                <a
+                                  href={lc.invoiceUrl}
+                                  className="text-primary-700 font-semibold hover:underline"
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  {lc.invoiceUrl}
+                                </a>
+                              ) : (
+                                "Not generated"
+                              )}
+                            </div>
+                            {lc.lastAction && (
+                              <div className="text-[11px] text-gray-500 mt-1">Last action: {lc.lastAction}</div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="rounded-3xl border border-gray-200/60 bg-white p-5">
+                        <div className="text-sm font-black text-gray-900 mb-4">Dispute Resolution</div>
+                        <div className="flex items-start gap-3">
+                          <div className="w-9 h-9 rounded-2xl bg-gray-50 border border-gray-200/60 flex items-center justify-center text-gray-600">
+                            <AlertCircle className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-gray-900">
+                              {dispute?.status ? dispute.status : "Not opened"}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              Submit an issue for review. Admin will evaluate and respond.
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-3xl border border-gray-200/60 bg-white p-5">
+                        <div className="text-sm font-black text-gray-900 mb-4">Shipment Insurance</div>
+                        <div className="flex items-start gap-3">
+                          <div className="w-9 h-9 rounded-2xl bg-gray-50 border border-gray-200/60 flex items-center justify-center text-gray-600">
+                            <ShieldCheck className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-gray-900">
+                              {order.insuranceEnabled ? "Enabled" : "Not enabled"}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {claim?.status ? `Claim: ${claim.status}` : "File a claim if the shipment is damaged or delayed."}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })
+        )}
+      </div>
+
+      {disputeModalFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm"
+            onClick={() => setDisputeModalFor(null)}
+            aria-label="Close"
+          />
+          <div className="relative w-full max-w-lg">
+            <Card className="overflow-hidden">
+              <CardContent className="p-6">
+                <div className="text-lg font-black text-gray-900 mb-1">Open Dispute</div>
+                <div className="text-sm text-gray-500 mb-6">Order {disputeModalFor}</div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Reason</label>
+                    <select
+                      value={draftDisputeReason}
+                      onChange={(e) => setDraftDisputeReason(e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-4 py-3 bg-white focus:ring-2 focus:ring-primary-500/20 focus:outline-none"
+                    >
+                      <option>Delivery issue</option>
+                      <option>Item not as described</option>
+                      <option>Damaged shipment</option>
+                      <option>Missing items</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Description</label>
+                    <textarea
+                      value={draftDisputeDescription}
+                      onChange={(e) => setDraftDisputeDescription(e.target.value)}
+                      rows={4}
+                      className="w-full border border-gray-200 rounded-xl px-4 py-3 bg-white focus:ring-2 focus:ring-primary-500/20 focus:outline-none"
+                      placeholder="Describe the issue and attach evidence in LC/Documents if needed."
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-6 flex items-center justify-end gap-3">
+                  <Button variant="secondary" onClick={() => setDisputeModalFor(null)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      if (!disputeModalFor) return;
+                      setDisputeState((prev) => ({
+                        ...prev,
+                        [disputeModalFor]: {
+                          status: "OPEN",
+                          reason: draftDisputeReason,
+                          description: draftDisputeDescription,
+                        },
+                      }));
+                      setDisputeModalFor(null);
+                    }}
+                  >
+                    Submit
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {claimModalFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm"
+            onClick={() => setClaimModalFor(null)}
+            aria-label="Close"
+          />
+          <div className="relative w-full max-w-lg">
+            <Card className="overflow-hidden">
+              <CardContent className="p-6">
+                <div className="text-lg font-black text-gray-900 mb-1">Insurance Claim</div>
+                <div className="text-sm text-gray-500 mb-6">Order {claimModalFor}</div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Claim Amount (USD)</label>
+                    <input
+                      value={draftClaimAmount}
+                      onChange={(e) => setDraftClaimAmount(e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-4 py-3 bg-white focus:ring-2 focus:ring-primary-500/20 focus:outline-none"
+                      placeholder="e.g., 120.00"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Description</label>
+                    <textarea
+                      value={draftClaimDescription}
+                      onChange={(e) => setDraftClaimDescription(e.target.value)}
+                      rows={4}
+                      className="w-full border border-gray-200 rounded-xl px-4 py-3 bg-white focus:ring-2 focus:ring-primary-500/20 focus:outline-none"
+                      placeholder="Describe the incident (damage, loss, delay)."
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-6 flex items-center justify-end gap-3">
+                  <Button variant="secondary" onClick={() => setClaimModalFor(null)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      if (!claimModalFor) return;
+                      setClaimState((prev) => ({
+                        ...prev,
+                        [claimModalFor]: {
+                          status: "OPEN",
+                          amount: draftClaimAmount,
+                          description: draftClaimDescription,
+                        },
+                      }));
+                      setClaimModalFor(null);
+                    }}
+                  >
+                    Submit
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
+    </CustomerLayout>
+  );
+}

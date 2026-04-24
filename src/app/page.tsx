@@ -3,7 +3,15 @@ import { Features } from "@/features/landing/Features";
 import { Solutions } from "@/features/landing/Solutions";
 import { Button } from "@/components/ui/Button";
 import Link from "next/link";
+import { CheckCircle2 } from "lucide-react";
 import { CUSTOMER_LOGIN_URL, GET_STARTED_URL, MERCHANT_LOGIN_URL } from "@/constants/links";
+
+const trustHighlights = [
+  "Secure Payment (Escrow)",
+  "LC Payment Accepted",
+  "Shipment Insurance Available",
+  "Buyer Protection",
+];
 
 export default function LandingPage() {
   return (
@@ -19,6 +27,30 @@ export default function LandingPage() {
           <div className="flex flex-wrap justify-center items-center gap-12 md:gap-20 opacity-50 grayscale hover:grayscale-0 transition-all duration-500">
             {['TechCorp', 'GlobalFlow', 'IndustrialX', 'MarketPro', 'SupplyChain'].map((name) => (
               <span key={name} className="text-2xl font-black text-gray-900">{name}</span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="section-padding bg-white">
+        <div className="container-max">
+          <div className="text-center max-w-2xl mx-auto mb-12">
+            <h2 className="mb-3">Built for Trust at Scale</h2>
+            <p className="text-gray-600">
+              Every transaction is protected with enterprise-grade safeguards for buyers and sellers.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {trustHighlights.map((item) => (
+              <div
+                key={item}
+                className="flex items-start gap-4 rounded-2xl border border-gray-200/60 bg-gray-50/60 px-6 py-5"
+              >
+                <div className="w-10 h-10 rounded-xl bg-primary-50 text-primary-700 flex items-center justify-center">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div className="text-sm font-semibold text-gray-900">{item}</div>
+              </div>
             ))}
           </div>
         </div>

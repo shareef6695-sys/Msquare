@@ -1,11 +1,15 @@
 import React from 'react';
 import { MerchantLayout } from '@/features/merchant/MerchantLayout';
 import { Card, CardContent } from '@/components/ui/Card';
+import Link from 'next/link';
+import { MOCK_ESCROW_ORDERS } from '@/data/mockOrders';
 import { 
   TrendingUp, 
   ShoppingBag, 
   Package, 
   AlertCircle,
+  ShieldCheck,
+  FileText,
   ArrowUpRight,
   ArrowDownRight
 } from 'lucide-react';
@@ -18,6 +22,13 @@ const stats = [
 ];
 
 export default function MerchantDashboardPage() {
+  const recentOrders = MOCK_ESCROW_ORDERS.slice(0, 4).map((o) => ({
+    id: `#${o.id}`,
+    customer: o.customerId.replaceAll("_", " "),
+    status: o.status,
+    amount: new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(o.totalAmount),
+  }));
+
   return (
     <MerchantLayout>
       <div className="mb-8 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
@@ -54,13 +65,68 @@ export default function MerchantDashboardPage() {
         ))}
       </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+        <Card className="lg:col-span-2">
+          <CardContent className="p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-primary-50 border border-primary-200/60 flex items-center justify-center text-primary-700">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-lg font-black text-gray-900">Trade Assurance</div>
+                  <div className="text-sm text-gray-500 mt-1">
+                    Escrow protection, optional shipment insurance, and dispute handling to increase buyer confidence.
+                  </div>
+                </div>
+              </div>
+              <Link href="/merchant/orders" className="text-sm font-semibold text-primary-700 hover:text-primary-800">
+                View Orders
+              </Link>
+            </div>
+            <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {[
+                "Escrow hold until delivery confirmation",
+                "LC supported for enterprise buyers",
+                "Insurance add-on at checkout",
+                "Dispute resolution flow",
+              ].map((item) => (
+                <div key={item} className="rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-800">
+                  {item}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-start gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-blue-50 border border-blue-200/60 flex items-center justify-center text-blue-700">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-lg font-black text-gray-900">Trade Finance</div>
+                <div className="text-sm text-gray-500 mt-1">Manage LC requests, documents, and bank status.</div>
+              </div>
+            </div>
+            <Link href="/merchant/trade-finance" className="mt-5 block">
+              <button className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors">
+                Open Trade Finance
+              </button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Recent Orders */}
         <div className="lg:col-span-2">
           <Card className="h-full">
             <div className="p-6 border-b border-gray-100 flex items-center justify-between">
               <h3 className="text-lg font-bold">Recent Orders</h3>
-              <button className="text-primary-600 text-sm font-semibold hover:underline">View All</button>
+              <Link href="/merchant/orders" className="text-primary-600 text-sm font-semibold hover:underline">
+                View All
+              </Link>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left">
@@ -73,20 +139,15 @@ export default function MerchantDashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {[
-                    { id: '#ORD-7231', customer: 'Alice Johnson', status: 'Processing', amount: '$1,200.00' },
-                    { id: '#ORD-7230', customer: 'Bob Smith', status: 'Shipped', amount: '$450.00' },
-                    { id: '#ORD-7229', customer: 'Charlie Brown', status: 'Delivered', amount: '$89.00' },
-                    { id: '#ORD-7228', customer: 'David Wilson', status: 'Pending', amount: '$2,100.00' },
-                  ].map((order) => (
+                  {recentOrders.map((order) => (
                     <tr key={order.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">{order.id}</td>
                       <td className="px-6 py-4 text-sm text-gray-600">{order.customer}</td>
                       <td className="px-6 py-4">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          order.status === 'Processing' ? 'bg-blue-50 text-blue-600' :
-                          order.status === 'Shipped' ? 'bg-purple-50 text-purple-600' :
-                          order.status === 'Delivered' ? 'bg-green-50 text-green-600' :
+                          order.status === 'PROCESSING' ? 'bg-blue-50 text-blue-600' :
+                          order.status === 'SHIPPED' ? 'bg-purple-50 text-purple-600' :
+                          order.status === 'DELIVERED' ? 'bg-green-50 text-green-600' :
                           'bg-orange-50 text-orange-600'
                         }`}>
                           {order.status}

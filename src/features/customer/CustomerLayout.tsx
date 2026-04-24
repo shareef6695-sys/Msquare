@@ -1,8 +1,8 @@
 "use client";
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { 
   User, 
   ShoppingBag, 
@@ -12,6 +12,7 @@ import {
   LogOut,
   ChevronRight
 } from 'lucide-react';
+import { logout, requireRole } from "@/services/authStore";
 
 const customerMenuItems = [
   { icon: <User className="w-5 h-5" />, label: 'My Profile', href: '/customer/profile' },
@@ -23,6 +24,12 @@ const customerMenuItems = [
 
 export const CustomerLayout = ({ children }: { children: React.ReactNode }) => {
   const pathname = usePathname();
+  const router = useRouter();
+
+  useEffect(() => {
+    const gate = requireRole("CUSTOMER");
+    if (!gate.ok) router.replace("/customer-login");
+  }, [router]);
 
   return (
     <div className="min-h-screen bg-gray-50 pt-24 pb-20">
@@ -59,7 +66,13 @@ export const CustomerLayout = ({ children }: { children: React.ReactNode }) => {
                     <ChevronRight className="w-4 h-4" />
                   </Link>
                 ))}
-                <button className="flex items-center gap-3 px-4 py-3 w-full text-sm font-semibold text-gray-700 hover:bg-red-50 hover:text-red-700 rounded-2xl transition-colors mt-4">
+                <button
+                  className="flex items-center gap-3 px-4 py-3 w-full text-sm font-semibold text-gray-700 hover:bg-red-50 hover:text-red-700 rounded-2xl transition-colors mt-4"
+                  onClick={() => {
+                    logout();
+                    router.replace("/customer-login");
+                  }}
+                >
                   <LogOut className="w-5 h-5" />
                   Logout
                 </button>

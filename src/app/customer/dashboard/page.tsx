@@ -1,7 +1,8 @@
 import React from 'react';
 import { CustomerLayout } from '@/features/customer/CustomerLayout';
 import { Card, CardContent } from '@/components/ui/Card';
-import { ShoppingBag, Package, MapPin, Clock, ChevronRight } from 'lucide-react';
+import { ShieldCheck, FileText, ShoppingBag, Package, MapPin, Clock, ChevronRight } from 'lucide-react';
+import Link from 'next/link';
 
 export default function CustomerDashboardPage() {
   return (
@@ -32,11 +33,68 @@ export default function CustomerDashboardPage() {
         ))}
       </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        <Card className="lg:col-span-2">
+          <CardContent className="p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-primary-50 border border-primary-200/60 flex items-center justify-center text-primary-700">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-lg font-black text-gray-900">Trade Assurance</div>
+                  <div className="text-sm text-gray-500 mt-1">
+                    Escrow protection, shipment insurance options, and dispute resolution for safer sourcing.
+                  </div>
+                </div>
+              </div>
+              <Link href="/customer/orders" className="text-sm font-semibold text-primary-700 hover:text-primary-800">
+                View Orders
+              </Link>
+            </div>
+            <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {[
+                "Escrow payment protection",
+                "LC supported for enterprise orders",
+                "Optional shipment insurance",
+                "Buyer dispute resolution",
+              ].map((item) => (
+                <div key={item} className="rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-800">
+                  {item}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-start gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-blue-50 border border-blue-200/60 flex items-center justify-center text-blue-700">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-lg font-black text-gray-900">LC Center</div>
+                <div className="text-sm text-gray-500 mt-1">
+                  Upload LC documents and track bank status from your orders.
+                </div>
+              </div>
+            </div>
+            <Link href="/customer/orders" className="mt-5 block">
+              <button className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors">
+                Manage LC
+              </button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Recent Orders */}
       <Card>
         <div className="p-6 border-b border-gray-100/60 flex items-center justify-between">
           <h3 className="text-lg font-black">Recent Orders</h3>
-          <button className="text-primary-700 text-sm font-semibold hover:text-primary-800">See All</button>
+          <Link href="/customer/orders" className="text-primary-700 text-sm font-semibold hover:text-primary-800">
+            See All
+          </Link>
         </div>
         <div className="p-6 space-y-6">
           {[

@@ -1,21 +1,48 @@
-import React from 'react';
+ "use client";
+
+import React, { useState } from 'react';
 import { AuthLayout } from '@/components/layout/AuthLayout';
 import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
+import { useRouter } from "next/navigation";
+import { loginWithEmail } from "@/services/authStore";
 
 export default function CustomerLoginPage() {
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   return (
     <AuthLayout 
       title="Customer Login" 
       subtitle="Find products and track your orders"
     >
-      <form className="space-y-6">
+      <form
+        className="space-y-6"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setError(null);
+          setIsSubmitting(true);
+          try {
+            await loginWithEmail({ email, password, role: "CUSTOMER" });
+            router.push("/account");
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "Login failed.");
+          } finally {
+            setIsSubmitting(false);
+          }
+        }}
+      >
         <div>
           <label className="block text-sm font-medium text-gray-700">Email address</label>
           <input 
             type="email" 
             required 
             className="mt-1 block w-full border border-gray-300 rounded-lg shadow-sm py-2 px-3 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
           />
         </div>
 
@@ -25,8 +52,16 @@ export default function CustomerLoginPage() {
             type="password" 
             required 
             className="mt-1 block w-full border border-gray-300 rounded-lg shadow-sm py-2 px-3 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
           />
         </div>
+
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+            {error}
+          </div>
+        )}
 
         <div className="flex items-center justify-between">
           <div className="flex items-center">
@@ -38,13 +73,15 @@ export default function CustomerLoginPage() {
           </Link>
         </div>
 
-        <Button className="w-full">Sign In as Customer</Button>
+        <Button className="w-full" disabled={isSubmitting}>
+          {isSubmitting ? "Signing in..." : "Sign In as Customer"}
+        </Button>
       </form>
 
       <div className="mt-6 text-center">
         <p className="text-sm text-gray-600">
           Don’t have an account?{' '}
-          <Link href="/register?role=customer" className="font-medium text-primary-600 hover:text-primary-500">
+          <Link href="/customer-register" className="font-medium text-primary-600 hover:text-primary-500">
             Register now
           </Link>
         </p>

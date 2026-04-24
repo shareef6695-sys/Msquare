@@ -2,7 +2,7 @@ import React from 'react';
 import Image from 'next/image';
 import { MOCK_PRODUCTS } from '@/data/mockProducts';
 import { Button } from '@/components/ui/Button';
-import { Star, MapPin, ShieldCheck, Truck, RefreshCcw, ShoppingCart } from 'lucide-react';
+import { AlertCircle, FileText, Star, MapPin, ShieldCheck, Truck, ShoppingCart } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
 
 export default function ProductDetailsPage({ params }: { params: { id: string } }) {
@@ -79,18 +79,22 @@ export default function ProductDetailsPage({ params }: { params: { id: string } 
             </div>
 
             {/* Trust Badges */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-8 border-t border-gray-100">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-8 border-t border-gray-100">
               <div className="flex items-center gap-3">
                 <ShieldCheck className="w-6 h-6 text-green-600" />
                 <span className="text-xs font-medium text-gray-600">Trade Assurance</span>
               </div>
               <div className="flex items-center gap-3">
-                <Truck className="w-6 h-6 text-blue-600" />
-                <span className="text-xs font-medium text-gray-600">On-time Delivery</span>
+                <FileText className="w-6 h-6 text-blue-600" />
+                <span className="text-xs font-medium text-gray-600">LC Payment Accepted</span>
               </div>
               <div className="flex items-center gap-3">
-                <RefreshCcw className="w-6 h-6 text-orange-600" />
-                <span className="text-xs font-medium text-gray-600">Easy Returns</span>
+                <Truck className="w-6 h-6 text-emerald-600" />
+                <span className="text-xs font-medium text-gray-600">Protected Shipment</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <AlertCircle className="w-6 h-6 text-amber-600" />
+                <span className="text-xs font-medium text-gray-600">Buyer Protection</span>
               </div>
             </div>
           </div>

@@ -1,18 +1,31 @@
 import { MarketplaceHero } from "@/features/marketplace/MarketplaceHero";
 import { CategoryScroll } from "@/features/marketplace/CategoryScroll";
 import { ProductSection } from "@/features/marketplace/ProductSection";
-import { MOCK_PRODUCTS } from "@/data/mockProducts";
+import { mockProducts } from "@/data/mockProducts";
 import { Button } from "@/components/ui/Button";
+import { CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { CUSTOMER_LOGIN_URL, MERCHANT_LOGIN_URL } from "@/constants/links";
 import { MOCK_CATEGORIES } from "@/data/mockCategories";
+import {
+  getFeaturedProducts,
+  getNewProducts,
+  getRecommendedProducts,
+  getTopSellingProducts,
+} from "@/services/productService";
 
 export default function MarketplacePage() {
-  const featuredProducts = MOCK_PRODUCTS.filter(p => p.isFeatured);
-  const topSellingProducts = MOCK_PRODUCTS.filter(p => p.isTopSelling);
-  const newArrivals = MOCK_PRODUCTS.filter(p => p.isNewArrival);
-  const recommendedProducts = [...MOCK_PRODUCTS].sort((a, b) => b.rating - a.rating).slice(0, 4);
+  const featuredProducts = getFeaturedProducts();
+  const topSellingProducts = getTopSellingProducts().slice(0, 8);
+  const newArrivals = getNewProducts().slice(0, 8);
+  const recommendedProducts = getRecommendedProducts().slice(0, 4);
   const categorySpotlight = MOCK_CATEGORIES.slice(0, 3);
+  const trustHighlights = [
+    "Secure Payment (Escrow)",
+    "LC Payment Accepted",
+    "Shipment Insurance Available",
+    "Buyer Protection",
+  ];
 
   return (
     <div className="bg-gray-50 min-h-screen">
@@ -25,6 +38,24 @@ export default function MarketplacePage() {
         products={featuredProducts} 
         actionHref="/marketplace"
       />
+
+      <section className="py-12 bg-white">
+        <div className="container-max">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {trustHighlights.map((item) => (
+              <div
+                key={item}
+                className="flex items-start gap-4 rounded-2xl border border-gray-200/60 bg-gray-50/60 px-6 py-5"
+              >
+                <div className="w-10 h-10 rounded-xl bg-primary-50 text-primary-700 flex items-center justify-center">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div className="text-sm font-semibold text-gray-900">{item}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
       <section className="py-12 bg-gradient-to-r from-gray-950 to-primary-950 text-white">
         <div className="container-max flex flex-col md:flex-row items-center justify-between gap-8">
@@ -85,7 +116,7 @@ export default function MarketplacePage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {categorySpotlight.map((cat) => {
-              const products = MOCK_PRODUCTS.filter((p) => p.categoryId === cat.id).slice(0, 4);
+              const products = mockProducts.filter((p) => p.categoryId === cat.id).slice(0, 4);
               return (
                 <div key={cat.id} className="rounded-3xl border border-gray-200/60 bg-white p-6 shadow-sm shadow-gray-900/5">
                   <div className="flex items-center justify-between mb-5">
