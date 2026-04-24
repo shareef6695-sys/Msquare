@@ -9,16 +9,20 @@ import {
   Package, 
   ShoppingCart, 
   Users, 
+  CreditCard,
   FileText,
+  FileSearch,
   LogOut,
   Bell,
   Search,
+  Settings,
+  ShieldCheck,
   AlertTriangle
 } from 'lucide-react';
-import { logout, requireRole } from "@/services/authStore";
+import { loadSession, logout } from "@/services/authStore";
 import { Button } from '@/components/ui/Button';
 import { type ComplianceDocument } from '@/data/mockMerchants';
-import { getComplianceConfig, getMerchantById, runComplianceCheck, uploadComplianceDocumentReplacement } from '@/services/adminService';
+import { getComplianceConfig, getMerchantById, requireAdmin, runComplianceCheck, uploadComplianceDocumentReplacement } from '@/services/adminService';
 import {
   getUnreadCountForTargets,
   listMockNotificationsForTargets,
@@ -31,8 +35,15 @@ const menuItems = [
   { icon: <LayoutDashboard className="w-5 h-5" />, label: 'Dashboard', href: '/merchant/dashboard' },
   { icon: <Package className="w-5 h-5" />, label: 'Products', href: '/merchant/products' },
   { icon: <ShoppingCart className="w-5 h-5" />, label: 'Orders', href: '/merchant/orders' },
+  { icon: <Users className="w-5 h-5" />, label: 'Customers', href: '/merchant/customers' },
+  { icon: <CreditCard className="w-5 h-5" />, label: 'Payments', href: '/merchant/payments' },
+  { icon: <FileSearch className="w-5 h-5" />, label: 'LC Requests', href: '/merchant/lc-requests' },
+  { icon: <ShieldCheck className="w-5 h-5" />, label: 'Compliance', href: '/merchant/compliance' },
+  { icon: <FileText className="w-5 h-5" />, label: 'Documents', href: '/merchant/documents' },
+  { icon: <Bell className="w-5 h-5" />, label: 'Notifications', href: '/merchant/notifications' },
   { icon: <FileText className="w-5 h-5" />, label: 'Trade Finance', href: '/merchant/trade-finance' },
   { icon: <Users className="w-5 h-5" />, label: 'Team', href: '/merchant/team' },
+  { icon: <Settings className="w-5 h-5" />, label: 'Settings', href: '/merchant/settings' },
 ];
 
 const startOfDayUtc = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
@@ -85,13 +96,23 @@ export const MerchantLayout = ({ children }: { children: React.ReactNode }) => {
   }, [pathname]);
 
   useEffect(() => {
-    const gate = requireRole("MERCHANT");
-    if (!gate.ok) router.replace("/merchant-login");
-    else {
-      setMerchantId(gate.session.user.merchantParentId ?? gate.session.user.id);
-      setAccountEmail(gate.session.user.email);
-      setAccountPhone(gate.session.user.phone ?? null);
+    const admin = requireAdmin();
+    if (admin.ok) {
+      router.replace("/admin/dashboard");
+      return;
     }
+    const session = loadSession();
+    if (!session) {
+      router.replace("/merchant-login");
+      return;
+    }
+    if (session.user.role === "CUSTOMER") {
+      router.replace("/customer/dashboard");
+      return;
+    }
+    setMerchantId(session.user.merchantParentId ?? session.user.id);
+    setAccountEmail(session.user.email);
+    setAccountPhone(session.user.phone ?? null);
   }, [router]);
 
   const pushToast = (message: string) => {
@@ -320,6 +341,15 @@ export const MerchantLayout = ({ children }: { children: React.ReactNode }) => {
                       </button>
                     ))
                   )}
+                </div>
+                <div className="p-3 border-t border-gray-100/60">
+                  <Link
+                    href="/merchant/notifications"
+                    className="block rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-3 text-center text-sm font-black text-gray-900 hover:bg-gray-100 transition-colors"
+                    onClick={() => setNotificationsOpen(false)}
+                  >
+                    View all notifications
+                  </Link>
                 </div>
               </div>
             )}

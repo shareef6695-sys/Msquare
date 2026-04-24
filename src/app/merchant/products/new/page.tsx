@@ -2,12 +2,13 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { MerchantLayout } from "@/features/merchant/MerchantLayout";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { requireRole } from "@/services/authStore";
+import { loadSession } from "@/services/authStore";
 import { getComplianceConfig, getMerchantById } from "@/services/adminService";
-import { addProduct, listProducts } from "@/services/productService";
+import { addProduct } from "@/services/productService";
 import { MOCK_CATEGORIES } from "@/data/mockCategories";
 
 const startOfDayUtc = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
@@ -29,13 +30,12 @@ const isExpiredInGrace = (
   return dte < 0 && Math.abs(dte) <= graceDays;
 };
 
-export default function MerchantProductsPage() {
+export default function MerchantNewProductPage() {
+  const router = useRouter();
   const [merchantId, setMerchantId] = useState<string | null>(null);
   const [teamRole, setTeamRole] = useState<"admin" | "manager" | "viewer">("admin");
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [createOpen, setCreateOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [toasts, setToasts] = useState<Array<{ id: string; message: string }>>([]);
+  const [error, setError] = useState<string | null>(null);
 
   const [draft, setDraft] = useState({
     name: "",
@@ -48,17 +48,11 @@ export default function MerchantProductsPage() {
   });
 
   useEffect(() => {
-    const gate = requireRole("MERCHANT");
-    if (!gate.ok) return;
-    setMerchantId(gate.session.user.merchantParentId ?? gate.session.user.id);
-    setTeamRole((gate.session.user.merchantTeamRole ?? "admin") as any);
+    const session = loadSession();
+    if (!session || session.user.role !== "MERCHANT") return;
+    setMerchantId(session.user.merchantParentId ?? session.user.id);
+    setTeamRole((session.user.merchantTeamRole ?? "admin") as any);
   }, []);
-
-  const pushToast = (message: string) => {
-    const id = `toast_${Math.random().toString(16).slice(2, 10)}`;
-    setToasts((t) => [...t, { id, message }]);
-    window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3500);
-  };
 
   const merchant = useMemo(() => (merchantId ? getMerchantById(merchantId) : null), [merchantId]);
 
@@ -74,85 +68,38 @@ export default function MerchantProductsPage() {
     return { ok: true, reason: null as string | null };
   }, [merchant, teamRole]);
 
-  const products = merchantId ? listProducts().filter((p) => p.merchantId === merchantId) : [];
-
-  const Modal = ({ open, title, children }: { open: boolean; title: string; children: React.ReactNode }) => {
-    if (!open) return null;
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-        <button className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm" onClick={() => (busy ? null : setCreateOpen(false))} />
-        <div className="relative w-full max-w-2xl rounded-3xl border border-gray-200/60 bg-white shadow-xl shadow-gray-900/20">
-          <div className="p-6 border-b border-gray-100/60">
-            <div className="text-lg font-black text-gray-900">{title}</div>
-          </div>
-          <div className="p-6">{children}</div>
-        </div>
-      </div>
-    );
-  };
-
   return (
     <MerchantLayout>
       <div className="mb-8 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-gray-900">Products</h1>
-          <p className="text-gray-500">Add and manage your catalog using mock data only.</p>
+          <h1 className="text-2xl font-black tracking-tight text-gray-900">New product</h1>
+          <p className="text-gray-500">Create a product using mock data only.</p>
         </div>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <Link href="/merchant/products/new">
-            <Button disabled={!createGate.ok} title={createGate.reason ?? undefined}>
-              New product
-            </Button>
-          </Link>
-          <Button variant="outline" onClick={() => setCreateOpen(true)} disabled={!createGate.ok} title={createGate.reason ?? undefined}>
-            Quick add
-          </Button>
-        </div>
+        <Link href="/merchant/products">
+          <Button variant="outline">Back to products</Button>
+        </Link>
       </div>
 
-      <Card>
-        <div className="p-6 border-b border-gray-100/60 flex items-center justify-between">
-          <div className="text-lg font-black text-gray-900">My catalog</div>
-          <div className="text-sm font-semibold text-gray-500">{products.length} items</div>
+      {!createGate.ok && (
+        <div className="mb-6 rounded-2xl border border-amber-200/70 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+          {createGate.reason}
         </div>
-        <CardContent className="p-6">
-          {products.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-gray-200 bg-gray-50 p-12 text-center">
-              <div className="text-lg font-black text-gray-900">No products yet</div>
-              <div className="text-sm text-gray-500 mt-2">Add your first product to appear in the marketplace.</div>
-              <Button className="mt-6" onClick={() => setCreateOpen(true)} disabled={!createGate.ok} title={createGate.reason ?? undefined}>
-                Add product
-              </Button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {products.map((p) => (
-                <div key={p.id} className="rounded-2xl border border-gray-200/60 bg-white px-5 py-4 flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <Link href={`/merchant/products/${p.id}`} className="text-sm font-black text-gray-900 truncate hover:text-primary-700">
-                      {p.name}
-                    </Link>
-                    <div className="text-xs text-gray-500 mt-1">
-                      {MOCK_CATEGORIES.find((c) => c.id === p.categoryId)?.name ?? "Category"} • MOQ {p.minOrderQuantity} • Stock {p.stock}
-                    </div>
-                    <div className="text-xs text-gray-500 mt-1">{p.location}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm font-black text-gray-900">${p.price.toFixed(2)}</div>
-                    <div className="text-xs text-gray-500 mt-1">{p.createdAt ?? ""}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      )}
 
-      <Modal open={createOpen} title="Add product">
-        <div className="grid grid-cols-1 gap-4">
+      {error && (
+        <div className="mb-6 rounded-2xl border border-red-200/70 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+          {error}
+        </div>
+      )}
+
+      <Card>
+        <div className="p-6 border-b border-gray-100/60">
+          <div className="text-lg font-black text-gray-900">Product details</div>
+        </div>
+        <CardContent className="p-6 space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <div className="text-sm font-black text-gray-900 mb-2">Product name</div>
+              <div className="text-sm font-black text-gray-900 mb-2">Name</div>
               <input
                 value={draft.name}
                 onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
@@ -183,7 +130,7 @@ export default function MerchantProductsPage() {
             <textarea
               value={draft.description}
               onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
-              rows={4}
+              rows={5}
               className="w-full rounded-2xl border border-gray-200/60 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20"
               placeholder="Short product description for buyers…"
               disabled={busy}
@@ -233,66 +180,50 @@ export default function MerchantProductsPage() {
             />
           </div>
 
-          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
-            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={busy}>
-              Cancel
-            </Button>
+          <div className="flex flex-col sm:flex-row sm:justify-end gap-3 pt-2">
+            <Link href="/merchant/products">
+              <Button variant="outline" disabled={busy}>
+                Cancel
+              </Button>
+            </Link>
             <Button
+              disabled={busy || !merchantId || !createGate.ok || !draft.name.trim()}
               onClick={() => {
                 if (!merchantId) return;
-                if (!createGate.ok) {
-                  pushToast(createGate.reason ?? "Action not available.");
-                  return;
-                }
-                if (!draft.name.trim()) return;
+                if (!createGate.ok) return;
                 setBusy(true);
+                setError(null);
                 try {
                   const nowIso = new Date().toISOString().slice(0, 10);
-                  addProduct({
+                  const created = addProduct({
                     name: draft.name.trim(),
-                    description: draft.description.trim() || "Product description pending.",
-                    price: Number(draft.price) || 0,
+                    description: draft.description.trim() || "Product description",
+                    price: Number(draft.price) || 100,
                     minOrderQuantity: Math.max(1, Number(draft.minOrderQuantity) || 1),
                     stock: Math.max(0, Number(draft.stock) || 0),
+                    images: [draft.imageUrl.trim()],
                     categoryId: draft.categoryId,
                     merchantId,
-                    merchantName: merchant?.businessName ?? merchant?.storeName ?? "Merchant",
-                    images: [draft.imageUrl.trim()],
+                    merchantName: merchant?.businessName ?? "Merchant",
+                    location: merchant?.city ?? "Saudi Arabia",
                     rating: 4.6,
-                    reviewsCount: 12,
-                    location: merchant ? `${merchant.city}, ${merchant.country}` : "Saudi Arabia",
+                    reviewsCount: 0,
                     salesCount: 0,
                     createdAt: nowIso,
-                    isNewArrival: true,
                   });
-                  setCreateOpen(false);
-                  setDraft((d) => ({ ...d, name: "", description: "" }));
-                  setRefreshKey((k) => k + 1);
-                  pushToast("Product added. It is now visible in the marketplace.");
+                  router.push(`/merchant/products/${created.id}`);
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : "Failed to create product.");
                 } finally {
                   setBusy(false);
                 }
               }}
-              disabled={busy || !draft.name.trim()}
             >
-              Save product
+              Create product
             </Button>
           </div>
-        </div>
-      </Modal>
-
-      {toasts.length > 0 && (
-        <div className="fixed right-4 top-4 z-[60] space-y-3">
-          {toasts.map((t) => (
-            <div
-              key={t.id}
-              className="max-w-sm rounded-2xl border border-gray-200/60 bg-white px-4 py-3 text-sm font-semibold text-gray-900 shadow-lg shadow-gray-900/15"
-            >
-              {t.message}
-            </div>
-          ))}
-        </div>
-      )}
+        </CardContent>
+      </Card>
     </MerchantLayout>
   );
 }

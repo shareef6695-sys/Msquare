@@ -2,16 +2,20 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AuthLayout } from "@/components/layout/AuthLayout";
 import { Button } from "@/components/ui/Button";
 import {
+  loadSession,
   resendMerchantVerificationCode,
   startMerchantSignup,
   submitMerchantBusinessProfile,
   verifyMerchantEmail,
 } from "@/services/authStore";
+import { requireAdmin } from "@/services/adminService";
 
 export default function MerchantRegisterPage() {
+  const router = useRouter();
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [account, setAccount] = useState({
     ownerName: "",
@@ -53,6 +57,18 @@ export default function MerchantRegisterPage() {
   useEffect(() => {
     setError(null);
   }, [step]);
+
+  useEffect(() => {
+    const admin = requireAdmin();
+    if (admin.ok) {
+      router.replace("/admin/dashboard");
+      return;
+    }
+    const session = loadSession();
+    if (!session) return;
+    if (session.user.role === "MERCHANT") router.replace("/merchant/dashboard");
+    else router.replace("/customer/dashboard");
+  }, [router]);
 
   return (
     <AuthLayout title="Merchant Registration" subtitle="Create your supplier account and start selling on MSquare">

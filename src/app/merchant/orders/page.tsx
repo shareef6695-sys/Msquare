@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { MerchantLayout } from "@/features/merchant/MerchantLayout";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { markOrderShipped, seedOrdersIfEmpty } from "@/services/orderStore";
-import { requireRole } from "@/services/authStore";
+import { loadSession } from "@/services/authStore";
 import { getComplianceConfig, getMerchantById } from "@/services/adminService";
 import { Order } from "@/types";
 import { AlertCircle, PackageCheck, ShieldCheck, Truck } from "lucide-react";
@@ -47,16 +48,19 @@ export default function MerchantOrdersPage() {
   const [restrictionLevel, setRestrictionLevel] = useState<"warning" | "limited_access" | "payout_hold" | "full_hold">("warning");
   const [shippingAllowed, setShippingAllowed] = useState(true);
   const [teamRole, setTeamRole] = useState<"admin" | "manager" | "viewer">("admin");
+  const [merchantId, setMerchantId] = useState<string | null>(null);
 
   useEffect(() => {
     setOrders(seedOrdersIfEmpty());
+    const session = loadSession();
+    if (session && session.user.role === "MERCHANT") setMerchantId(session.user.merchantParentId ?? session.user.id);
   }, []);
 
   useEffect(() => {
-    const gate = requireRole("MERCHANT");
-    if (!gate.ok) return;
-    setTeamRole((gate.session.user.merchantTeamRole ?? "admin") as any);
-    const effectiveMerchantId = gate.session.user.merchantParentId ?? gate.session.user.id;
+    const session = loadSession();
+    if (!session || session.user.role !== "MERCHANT") return;
+    setTeamRole((session.user.merchantTeamRole ?? "admin") as any);
+    const effectiveMerchantId = session.user.merchantParentId ?? session.user.id;
     const merchant = getMerchantById(effectiveMerchantId);
     setRestrictionLevel((merchant?.restrictionLevel ?? "warning") as any);
     const config = getComplianceConfig();
@@ -65,8 +69,9 @@ export default function MerchantOrdersPage() {
   }, []);
 
   const sorted = useMemo(() => {
-    return [...orders].sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
-  }, [orders]);
+    const mine = merchantId ? orders.filter((o) => o.merchantId === merchantId) : orders;
+    return [...mine].sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+  }, [merchantId, orders]);
 
   return (
     <MerchantLayout>
@@ -110,7 +115,9 @@ export default function MerchantOrdersPage() {
                 <div className="p-6 border-b border-gray-100/60 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-3">
-                      <div className="text-sm font-black text-gray-900">{order.id}</div>
+                      <Link href={`/merchant/orders/${order.id}`} className="text-sm font-black text-gray-900 hover:text-primary-700">
+                        {order.id}
+                      </Link>
                       <span
                         className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-black ${badgeClass(
                           order.status,
@@ -186,6 +193,11 @@ export default function MerchantOrdersPage() {
                             : "Locked"}
                       </Button>
                     )}
+                    <Link href={`/merchant/orders/${order.id}`} className="hidden sm:block">
+                      <Button variant="outline" size="sm" className="whitespace-nowrap">
+                        Details
+                      </Button>
+                    </Link>
                   </div>
                 </div>
 
