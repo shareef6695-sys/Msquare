@@ -9,6 +9,8 @@ const isPortalRoute = (pathname: string) => {
   if (pathname.startsWith("/admin")) return true;
   if (pathname.startsWith("/merchant/")) return true;
   if (pathname.startsWith("/customer/")) return true;
+  if (pathname.startsWith("/ceo-dashboard")) return true;
+  if (pathname === "/login") return true;
   if (pathname.startsWith("/account")) return true;
   return false;
 };
@@ -27,4 +29,3 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
     </>
   );
 };
-
