@@ -12,6 +12,7 @@ import { addProduct } from "@/services/productService";
 import { MOCK_CATEGORIES } from "@/data/mockCategories";
 import { AIProductGenerator } from "@/components/ai/AIProductGenerator";
 import { evaluateProductCompliance } from "@/services/productComplianceService";
+import { supabase } from "@/lib/supabase";
 
 const startOfDayUtc = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
 
@@ -32,12 +33,23 @@ const isExpiredInGrace = (
   return dte < 0 && Math.abs(dte) <= graceDays;
 };
 
+const sanitizeFilename = (name: string) =>
+  name
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9.\-_]/g, "")
+    .replace(/-+/g, "-")
+    .slice(0, 120) || "image";
+
 export default function MerchantNewProductPage() {
   const router = useRouter();
   const [merchantId, setMerchantId] = useState<string | null>(null);
   const [teamRole, setTeamRole] = useState<"admin" | "manager" | "viewer">("admin");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadBusy, setUploadBusy] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const [draft, setDraft] = useState({
     name: "",
@@ -98,6 +110,33 @@ export default function MerchantNewProductPage() {
       "Saudi Arabia",
     );
   }, [draft, merchant?.businessName, merchant?.city, merchantId]);
+
+  const uploadProductImage = async (file: File) => {
+    if (!merchantId) throw new Error("Merchant account not found.");
+    if (!file.type.startsWith("image/")) throw new Error("Please select an image file.");
+    if (file.size > 10 * 1024 * 1024) throw new Error("Image is too large. Max size is 10MB.");
+    const ext = (() => {
+      const raw = file.name.split(".").pop();
+      const cleaned = raw ? raw.toLowerCase().replace(/[^a-z0-9]/g, "") : "";
+      return cleaned ? `.${cleaned}` : "";
+    })();
+    const base = sanitizeFilename(file.name.replace(/\.[^/.]+$/, ""));
+    const id = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Date.now());
+    const path = `merchants/${merchantId}/${base}-${id}${ext || ".png"}`;
+
+    const res = await supabase.storage.from("product-images").upload(path, file, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: file.type,
+    });
+
+    if (res.error) throw new Error(res.error.message);
+
+    const pub = supabase.storage.from("product-images").getPublicUrl(path);
+    const url = pub.data.publicUrl;
+    if (!url) throw new Error("Upload succeeded, but public URL was not returned.");
+    return url;
+  };
 
   return (
     <MerchantLayout>
@@ -225,6 +264,42 @@ export default function MerchantNewProductPage() {
               className="w-full rounded-2xl border border-gray-200/60 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20"
               disabled={busy}
             />
+            <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-3">
+              <input
+                type="file"
+                accept="image/*"
+                className="w-full sm:max-w-sm rounded-2xl border border-gray-200/60 bg-white px-4 py-3 text-sm font-semibold text-gray-800"
+                disabled={busy || uploadBusy || !merchantId || !createGate.ok}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setUploadBusy(true);
+                  setUploadError(null);
+                  try {
+                    const url = await uploadProductImage(file);
+                    setDraft((d) => ({ ...d, imageUrl: url }));
+                  } catch (err) {
+                    setUploadError(err instanceof Error ? err.message : "Failed to upload image.");
+                  } finally {
+                    setUploadBusy(false);
+                    e.target.value = "";
+                  }
+                }}
+              />
+              <div className="text-xs font-semibold text-gray-500">
+                Upload to Supabase Storage (bucket: product-images)
+              </div>
+            </div>
+            {uploadError && (
+              <div className="mt-3 rounded-2xl border border-red-200/70 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+                {uploadError}
+              </div>
+            )}
+            {uploadBusy && (
+              <div className="mt-3 rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-700">
+                Uploading image…
+              </div>
+            )}
           </div>
 
           <div className="rounded-2xl border border-gray-200/60 bg-gray-50 px-5 py-4">
