@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from '@/components/ui/Button';
@@ -21,6 +21,7 @@ import { Address, PaymentMethod } from "@/types";
 import { loadSession } from "@/services/authStore";
 import { getComplianceConfig, getCustomerById, requireAdmin, runComplianceCheck } from "@/services/adminService";
 import { clearCart, getResolvedCartItems } from "@/services/cartStore";
+import { evaluateCartCompliance } from "@/services/productComplianceService";
 
 const startOfDayUtc = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
 
@@ -81,6 +82,13 @@ export default function CheckoutPage() {
   const deliveryEstimateDays = shippingMethod === "express" ? 3 : shippingMethod === "freight" ? 9 : 6;
   const insuranceFee = includeInsurance ? itemsTotal * 0.015 : 0;
   const orderTotal = itemsTotal + tax + shippingFee + insuranceFee;
+  const destinationCountry =
+    addresses.find((a) => a.id === selectedAddressId)?.country || addressDraft.country || "Saudi Arabia";
+  const productCompliance = useMemo(
+    () => evaluateCartCompliance(cart.items.map((i) => i.product), destinationCountry),
+    [cart.items, destinationCountry],
+  );
+  const productComplianceBlocked = !productCompliance.passed;
 
   useEffect(() => {
     const admin = requireAdmin();
@@ -146,6 +154,9 @@ export default function CheckoutPage() {
     setTimeout(() => {
       try {
         if (cart.items.length === 0) throw new Error("Your cart is empty.");
+        if (productComplianceBlocked) {
+          throw new Error("Product compliance violations detected for destination country rules (SABER/FASAH/category restrictions).");
+        }
         const shippingAddress =
           addresses.find((a) => a.id === selectedAddressId) ??
           ({
@@ -431,11 +442,34 @@ export default function CheckoutPage() {
                 <Button 
                   className="w-full py-4 text-lg font-bold" 
                   size="lg"
-                  disabled={isProcessing || restricted || cart.items.length === 0}
+                  disabled={isProcessing || restricted || productComplianceBlocked || cart.items.length === 0}
                   onClick={handlePlaceOrder}
                 >
-                  {cart.items.length === 0 ? "Cart empty" : restricted ? 'Compliance required' : isProcessing ? 'Processing...' : 'Place Order'}
+                  {cart.items.length === 0
+                    ? "Cart empty"
+                    : restricted
+                      ? "Compliance required"
+                      : productComplianceBlocked
+                        ? "Product compliance required"
+                        : isProcessing
+                          ? "Processing..."
+                          : "Place Order"}
                 </Button>
+                {productComplianceBlocked && (
+                  <div className="mt-4 rounded-2xl border border-red-200/70 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
+                    <div className="font-black">
+                      Product compliance violations ({destinationCountry})
+                    </div>
+                    <ul className="mt-2 list-disc pl-5 space-y-1">
+                      {productCompliance.violations.map((v, idx) => (
+                        <li key={`${v.code}_${idx}`}>
+                          {v.productName ? `${v.productName}: ` : ""}
+                          {v.message}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 {graceWarning && (
                   <div className="mt-4 rounded-2xl border border-amber-200/70 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
                     {graceWarning}

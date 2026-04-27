@@ -14,6 +14,7 @@ import {
   type MerchantStatus,
   type MockMerchant,
   type RiskLevel,
+  type TrustTier,
 } from "@/data/mockMerchants";
 import {
   buildAccountHoldPlacedEmail,
@@ -72,6 +73,61 @@ export type MockCustomer = {
     riskLevel: RiskLevel;
   };
   createdAt: string;
+};
+
+export type VerificationChecks = {
+  commercialRegistration: boolean;
+  vatRegistration: boolean;
+  bankAccountOwnership: boolean;
+  beneficialOwner: boolean;
+};
+
+export const trustTierLabel = (tier: TrustTier) => {
+  if (tier === "factory_verified") return "Factory verified";
+  if (tier === "gold_supplier") return "Gold supplier";
+  return "Verified";
+};
+
+const isPassingDocStatus = (status: ComplianceDocument["status"]) => status === "valid" || status === "expiring_soon";
+
+const hasPassingDoc = (docs: ComplianceDocument[], type: ComplianceDocumentType) =>
+  docs.some((d) => d.documentType === type && isPassingDocStatus(d.status));
+
+export const getMerchantVerificationChecks = (merchant: MockMerchant): VerificationChecks => {
+  const docs = merchant.complianceDocuments ?? [];
+  return {
+    commercialRegistration: Boolean(merchant.commercialRegistrationNumber?.trim()) && hasPassingDoc(docs, "Commercial Registration Certificate"),
+    vatRegistration: Boolean(merchant.vatNumber?.trim()) && hasPassingDoc(docs, "VAT Certificate"),
+    bankAccountOwnership: Boolean(merchant.iban?.trim()) && hasPassingDoc(docs, "Bank Letter / IBAN Certificate"),
+    beneficialOwner: Boolean(merchant.ownerName?.trim()) && hasPassingDoc(docs, "Owner ID / National ID"),
+  };
+};
+
+export const getCustomerVerificationChecks = (customer: MockCustomer): VerificationChecks => {
+  const docs = customer.complianceDocuments ?? [];
+  return {
+    commercialRegistration: hasPassingDoc(docs, "Commercial Registration Certificate"),
+    vatRegistration: hasPassingDoc(docs, "VAT Certificate"),
+    bankAccountOwnership: hasPassingDoc(docs, "Bank Letter / IBAN Certificate"),
+    beneficialOwner: hasPassingDoc(docs, "Owner ID / National ID"),
+  };
+};
+
+export const getMerchantTrustTier = (merchant: MockMerchant): TrustTier | null => {
+  if (merchant.trustTierOverride) return merchant.trustTierOverride;
+  const checks = getMerchantVerificationChecks(merchant);
+  const all = Object.values(checks).every(Boolean);
+  if (!all) return null;
+  const docs = merchant.complianceDocuments ?? [];
+  if (hasPassingDoc(docs, "Chamber of Commerce Certificate") || hasPassingDoc(docs, "Authorized Signatory Document")) return "factory_verified";
+  if ((merchant.complianceScore ?? 0) >= 95 && merchant.riskChecks.riskLevel === "Low") return "gold_supplier";
+  return "verified";
+};
+
+export const getCustomerTrustTier = (customer: MockCustomer): TrustTier | null => {
+  const checks = getCustomerVerificationChecks(customer);
+  const all = Object.values(checks).every(Boolean);
+  return all ? "verified" : null;
 };
 
 const startOfDayUtc = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
@@ -222,11 +278,17 @@ const createDefaultComplianceDocuments = (ownerType: "merchant" | "customer", ow
     return [
       mk(`${ownerId}_doc_cr`, "Commercial Registration Certificate", "2027-04-24"),
       mk(`${ownerId}_doc_vat`, "VAT Certificate", "2027-04-24"),
+      mk(`${ownerId}_doc_owner`, "Owner ID / National ID", "2027-04-24"),
       mk(`${ownerId}_doc_bank`, "Bank Letter / IBAN Certificate", "2027-04-24"),
     ];
   }
 
-  return [mk(`${ownerId}_doc_owner`, "Owner ID / National ID", "2027-04-24")];
+  return [
+    mk(`${ownerId}_doc_cr`, "Commercial Registration Certificate", "2027-04-24"),
+    mk(`${ownerId}_doc_vat`, "VAT Certificate", "2027-04-24"),
+    mk(`${ownerId}_doc_bank`, "Bank Letter / IBAN Certificate", "2027-04-24"),
+    mk(`${ownerId}_doc_owner`, "Owner ID / National ID", "2027-04-24"),
+  ];
 };
 
 const normalizeMerchantCompliance = (merchant: MockMerchant) => {
@@ -362,23 +424,44 @@ const loadCustomersStore = (): MockCustomer[] => {
             complianceHold: false,
             complianceDocuments: [
               {
-                id: "c_demo_doc_owner",
-                documentType: "Owner ID / National ID",
-                fileUrl: "/mock/docs/c_demo/owner-id.pdf",
-                issueDate: "2021-01-01",
-                expiryDate: "2026-05-10",
+                id: "c_demo_doc_cr",
+                documentType: "Commercial Registration Certificate",
+                fileUrl: "/mock/docs/c_demo/cr.pdf",
+                issueDate: "2025-01-01",
+                expiryDate: "2027-01-01",
                 status: "valid",
                 uploadedAt: "2026-04-01T10:00:00.000Z",
                 reviewedAt: "2026-04-02T09:00:00.000Z",
               },
               {
-                id: "c_demo_doc_compliance",
-                documentType: "Compliance Document",
-                fileUrl: "/mock/docs/c_demo/compliance.pdf",
-                issueDate: "2026-01-01",
-                expiryDate: "2026-04-20",
-                status: "expired",
+                id: "c_demo_doc_vat",
+                documentType: "VAT Certificate",
+                fileUrl: "/mock/docs/c_demo/vat.pdf",
+                issueDate: "2025-01-01",
+                expiryDate: "2027-01-01",
+                status: "valid",
                 uploadedAt: "2026-04-01T10:00:00.000Z",
+                reviewedAt: "2026-04-02T09:00:00.000Z",
+              },
+              {
+                id: "c_demo_doc_bank",
+                documentType: "Bank Letter / IBAN Certificate",
+                fileUrl: "/mock/docs/c_demo/bank.pdf",
+                issueDate: "2026-01-01",
+                expiryDate: "2027-01-01",
+                status: "valid",
+                uploadedAt: "2026-04-01T10:00:00.000Z",
+                reviewedAt: "2026-04-02T09:00:00.000Z",
+              },
+              {
+                id: "c_demo_doc_owner",
+                documentType: "Owner ID / National ID",
+                fileUrl: "/mock/docs/c_demo/owner-id.pdf",
+                issueDate: "2021-01-01",
+                expiryDate: "2027-05-10",
+                status: "valid",
+                uploadedAt: "2026-04-01T10:00:00.000Z",
+                reviewedAt: "2026-04-02T09:00:00.000Z",
               },
             ],
             riskChecks: { emailVerified: true, phoneVerified: true, riskLevel: "Low" },
@@ -428,6 +511,7 @@ const syncMerchantToUsers = (merchant: MockMerchant) => {
       notes: merchant.notes,
       uploadedDocuments: merchant.uploadedDocuments,
       riskChecks: merchant.riskChecks,
+      trustTierOverride: merchant.trustTierOverride,
     };
   });
   window.localStorage.setItem(USERS_KEY, JSON.stringify({ ...users, merchants: nextMerchants }));

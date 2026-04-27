@@ -9,7 +9,21 @@ import { SUPPORTED_CURRENCIES, convertCurrency, formatCurrency } from "@/utils/c
 import { type CurrencyCode, type Order } from "@/types";
 import { FileText, ShieldCheck } from "lucide-react";
 
-type LcUiState = Record<string, { uploaded: boolean; status: string; lastAction?: string; fileName?: string; invoiceUrl?: string }>;
+type LcUiState = Record<
+  string,
+  {
+    uploaded: boolean;
+    status: string;
+    lastAction?: string;
+    fileName?: string;
+    invoiceUrl?: string;
+    invoiceNumber?: string;
+    invoiceDate?: string;
+    shipmentDate?: string;
+    certificateText?: string;
+    insuranceCoveragePercent?: number;
+  }
+>;
 
 const defaultCurrency = (): CurrencyCode => {
   const raw = (process.env.NEXT_PUBLIC_DEFAULT_CURRENCY as CurrencyCode | undefined) ?? "SAR";

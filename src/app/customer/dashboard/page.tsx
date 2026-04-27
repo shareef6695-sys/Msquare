@@ -22,7 +22,21 @@ const defaultCurrency = (): CurrencyCode => {
   return SUPPORTED_CURRENCIES.includes(raw) ? raw : "SAR";
 };
 
-type LcUiState = Record<string, { uploaded: boolean; status: string; lastAction?: string; fileName?: string; invoiceUrl?: string }>;
+type LcUiState = Record<
+  string,
+  {
+    uploaded: boolean;
+    status: string;
+    lastAction?: string;
+    fileName?: string;
+    invoiceUrl?: string;
+    invoiceNumber?: string;
+    invoiceDate?: string;
+    shipmentDate?: string;
+    certificateText?: string;
+    insuranceCoveragePercent?: number;
+  }
+>;
 type DisputeState = Record<string, { status: string; reason: string; description: string }>;
 type ClaimState = Record<string, { status: string; amount: string; description: string }>;
 

@@ -7,7 +7,16 @@ import { AdminLayout } from "@/components/admin/AdminLayout";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/admin/StatusBadge";
-import { appendAdminAuditEvent, getMerchantById, requireAdmin, setMerchantStatus, updateMerchant } from "@/services/adminService";
+import {
+  appendAdminAuditEvent,
+  getMerchantById,
+  getMerchantTrustTier,
+  getMerchantVerificationChecks,
+  requireAdmin,
+  setMerchantStatus,
+  trustTierLabel,
+  updateMerchant,
+} from "@/services/adminService";
 import { sendDashboardNotification, sendMockEmail } from "@/services/emailService";
 import { buildMerchantApprovedEmail, buildMerchantDocumentsRequestedEmail, buildMerchantRejectedEmail } from "@/data/emailTemplates";
 import { AlertTriangle, Banknote, CheckCircle2, FileText, Mail, MapPin, Phone, ShieldCheck } from "lucide-react";
@@ -248,12 +257,20 @@ export default function AdminMerchantDetailPage() {
   };
 
   const checks = merchant.riskChecks;
+  const verification = getMerchantVerificationChecks(merchant);
+  const trustTier = getMerchantTrustTier(merchant);
   const items = [
     { label: "Email verified", ok: checks.emailVerified },
     { label: "Phone verified", ok: checks.phoneVerified },
     { label: "CR uploaded", ok: checks.crUploaded },
     { label: "Bank details provided", ok: checks.bankDetailsProvided },
     { label: "Documents uploaded", ok: checks.documentsUploaded },
+  ];
+  const verificationItems = [
+    { label: "Commercial registration", ok: verification.commercialRegistration },
+    { label: "VAT registration", ok: verification.vatRegistration },
+    { label: "Bank account ownership", ok: verification.bankAccountOwnership },
+    { label: "Beneficial owner", ok: verification.beneficialOwner },
   ];
 
   return (
@@ -421,6 +438,43 @@ export default function AdminMerchantDetailPage() {
           </Card>
 
           <Card>
+            <div className="p-6 border-b border-gray-100/60 flex items-center justify-between gap-4">
+              <h3 className="text-lg font-black text-gray-900">Verification checks</h3>
+              <span
+                className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-black ${
+                  trustTier
+                    ? trustTier === "factory_verified"
+                      ? "border-purple-200/70 bg-purple-50 text-purple-800"
+                      : trustTier === "gold_supplier"
+                        ? "border-amber-200/70 bg-amber-50 text-amber-900"
+                        : "border-green-200/70 bg-green-50 text-green-800"
+                    : "border-gray-200/70 bg-gray-50 text-gray-700"
+                }`}
+              >
+                {trustTier ? trustTierLabel(trustTier) : "Unverified"}
+              </span>
+            </div>
+            <CardContent className="p-6 space-y-3">
+              {verificationItems.map((item) => (
+                <div key={item.label} className="flex items-center justify-between rounded-2xl border border-gray-200/60 bg-white px-4 py-3">
+                  <div className="text-sm font-semibold text-gray-800">{item.label}</div>
+                  {item.ok ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-green-200/70 bg-green-50 px-3 py-1 text-xs font-black text-green-800">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Pass
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-amber-200/70 bg-amber-50 px-3 py-1 text-xs font-black text-amber-800">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      Review
+                    </span>
+                  )}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card>
             <div className="p-6 border-b border-gray-100/60 flex items-center justify-between">
               <h3 className="text-lg font-black text-gray-900">Approval panel</h3>
               <span className="inline-flex items-center gap-2 rounded-full border border-gray-200/60 bg-white px-3 py-1.5 text-xs font-bold text-gray-700">
@@ -439,6 +493,25 @@ export default function AdminMerchantDetailPage() {
                     <span className="font-semibold text-gray-900">Rejection reason:</span> {merchant.rejectionReason}
                   </div>
                 )}
+              </div>
+
+              <div>
+                <div className="text-sm font-black text-gray-900 mb-2">Trust tier</div>
+                <select
+                  className="w-full rounded-2xl border border-gray-200/60 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                  value={merchant.trustTierOverride ?? ""}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    updateMerchant(merchant.id, { trustTierOverride: v ? (v as any) : undefined });
+                    setRefreshKey((k) => k + 1);
+                  }}
+                  disabled={Boolean(busy)}
+                >
+                  <option value="">Auto (based on checks)</option>
+                  <option value="verified">Verified</option>
+                  <option value="gold_supplier">Gold supplier</option>
+                  <option value="factory_verified">Factory verified</option>
+                </select>
               </div>
 
               <div>

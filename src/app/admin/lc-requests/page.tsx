@@ -11,10 +11,22 @@ import { useExchangeRatesUsd } from "@/services/exchangeRateService";
 import { SUPPORTED_CURRENCIES, convertCurrency, formatCurrency } from "@/utils/currencyConverter";
 import { type CurrencyCode, type LcStatusType, type Order } from "@/types";
 import { FileText, ShieldCheck } from "lucide-react";
+import { validateLcDocumentPack } from "@/services/lcDocumentValidationService";
 
 type LcUiState = Record<
   string,
-  { uploaded: boolean; status: string; lastAction?: string; fileName?: string; invoiceUrl?: string }
+  {
+    uploaded: boolean;
+    status: string;
+    lastAction?: string;
+    fileName?: string;
+    invoiceUrl?: string;
+    invoiceNumber?: string;
+    invoiceDate?: string;
+    shipmentDate?: string;
+    certificateText?: string;
+    insuranceCoveragePercent?: number;
+  }
 >;
 
 type LcFilter = "all" | "under_review" | "accepted" | "settled";
@@ -206,6 +218,7 @@ export default function AdminLcRequestsPage() {
           {filtered.map((order) => {
             const ui = lcState[order.id];
             const status = normalizeLcStatus(order, ui);
+            const validation = validateLcDocumentPack(order, ui);
             const originalAmount = order.originalAmount ?? order.totalAmount ?? 0;
             const originalCurrency = (order.originalCurrency ?? defaultCurrency()) as CurrencyCode;
             const convertedAmount = ratesUsd ? convertCurrency(originalAmount, originalCurrency, reportingCurrency, ratesUsd).convertedAmount : null;
@@ -255,6 +268,18 @@ export default function AdminLcRequestsPage() {
                           <div className="text-xs text-gray-500 mt-1">{ui?.fileName ?? "None"}</div>
                         </div>
                         <div className="rounded-2xl border border-gray-200/60 bg-white px-4 py-3">
+                          <div className="text-sm font-semibold text-gray-900">Invoice number</div>
+                          <div className="text-xs text-gray-500 mt-1">{ui?.invoiceNumber ?? "—"}</div>
+                        </div>
+                        <div className="rounded-2xl border border-gray-200/60 bg-white px-4 py-3">
+                          <div className="text-sm font-semibold text-gray-900">Invoice date</div>
+                          <div className="text-xs text-gray-500 mt-1">{ui?.invoiceDate ?? "—"}</div>
+                        </div>
+                        <div className="rounded-2xl border border-gray-200/60 bg-white px-4 py-3">
+                          <div className="text-sm font-semibold text-gray-900">Shipment date</div>
+                          <div className="text-xs text-gray-500 mt-1">{ui?.shipmentDate ?? "—"}</div>
+                        </div>
+                        <div className="rounded-2xl border border-gray-200/60 bg-white px-4 py-3">
                           <div className="text-sm font-semibold text-gray-900">Invoice link</div>
                           <div className="text-xs text-gray-500 mt-1">
                             {ui?.invoiceUrl ? (
@@ -285,6 +310,32 @@ export default function AdminLcRequestsPage() {
                           {ui?.lastAction && <div className="text-xs text-gray-500 mt-1">Last action: {ui.lastAction}</div>}
                         </div>
                       </div>
+                      <div className="mt-4 rounded-2xl border border-gray-200/60 bg-white px-4 py-3">
+                        <div className="text-xs font-semibold uppercase tracking-widest text-gray-400">Validation (UCP 600)</div>
+                        {validation.passed ? (
+                          <div className="mt-2 inline-flex items-center rounded-full border border-green-200/70 bg-green-50 px-3 py-1 text-xs font-black text-green-800">
+                            Validated
+                          </div>
+                        ) : (
+                          <div className="mt-2 inline-flex items-center rounded-full border border-red-200/70 bg-red-50 px-3 py-1 text-xs font-black text-red-800">
+                            Discrepancies {validation.errors.length + validation.warnings.length}
+                          </div>
+                        )}
+                        {validation.errors.length > 0 && (
+                          <ul className="mt-3 list-disc pl-5 space-y-1 text-xs font-semibold text-red-800">
+                            {validation.errors.slice(0, 6).map((f, idx) => (
+                              <li key={`${f.code}_${idx}`}>{f.message}</li>
+                            ))}
+                          </ul>
+                        )}
+                        {validation.warnings.length > 0 && (
+                          <ul className="mt-3 list-disc pl-5 space-y-1 text-xs font-semibold text-amber-900">
+                            {validation.warnings.slice(0, 6).map((f, idx) => (
+                              <li key={`${f.code}_${idx}`}>{f.message}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
                       <div className="mt-4 text-[11px] font-bold uppercase tracking-widest text-gray-400">UI only</div>
                     </div>
                   </div>
@@ -299,7 +350,7 @@ export default function AdminLcRequestsPage() {
                     </Button>
                     <Button
                       onClick={() => void updateLcStatus(order, "APPROVED")}
-                      disabled={status === "APPROVED" || status === "REJECTED" || status === "SETTLED"}
+                      disabled={!validation.passed || status === "APPROVED" || status === "REJECTED" || status === "SETTLED"}
                     >
                       Approve
                     </Button>

@@ -13,6 +13,7 @@ import { useExchangeRatesUsd } from "@/services/exchangeRateService";
 import { SUPPORTED_CURRENCIES, convertCurrency, formatCurrency } from "@/utils/currencyConverter";
 import { type CurrencyCode, Order } from "@/types";
 import { AlertCircle, Banknote, CheckCircle2, Clock, FileDown, FileSearch, ShieldCheck, Truck, Upload } from "lucide-react";
+import { validateLcDocumentPack } from "@/services/lcDocumentValidationService";
 
 const defaultCurrency = (): CurrencyCode => {
   const raw = (process.env.NEXT_PUBLIC_DEFAULT_CURRENCY as CurrencyCode | undefined) ?? "SAR";
@@ -70,7 +71,18 @@ export default function CustomerOrdersPage() {
   const [lcState, setLcState] = useState<
     Record<
       string,
-      { uploaded: boolean; status: string; lastAction?: string; fileName?: string; invoiceUrl?: string }
+      {
+        uploaded: boolean;
+        status: string;
+        lastAction?: string;
+        fileName?: string;
+        invoiceUrl?: string;
+        invoiceNumber?: string;
+        invoiceDate?: string;
+        shipmentDate?: string;
+        certificateText?: string;
+        insuranceCoveragePercent?: number;
+      }
     >
   >({});
   const [disputeState, setDisputeState] = useState<Record<string, { status: string; reason: string; description: string }>>(
@@ -108,7 +120,18 @@ export default function CustomerOrdersPage() {
     try {
       const parsed = JSON.parse(raw) as Record<
         string,
-        { uploaded: boolean; status: string; lastAction?: string; fileName?: string; invoiceUrl?: string }
+        {
+          uploaded: boolean;
+          status: string;
+          lastAction?: string;
+          fileName?: string;
+          invoiceUrl?: string;
+          invoiceNumber?: string;
+          invoiceDate?: string;
+          shipmentDate?: string;
+          certificateText?: string;
+          insuranceCoveragePercent?: number;
+        }
       >;
       if (parsed && typeof parsed === "object") {
         setLcState(parsed);
@@ -541,6 +564,11 @@ export default function CustomerOrdersPage() {
                                       lastAction: "LC uploaded",
                                       fileName: file.name,
                                       invoiceUrl: prev[order.id]?.invoiceUrl,
+                                      invoiceNumber: prev[order.id]?.invoiceNumber,
+                                      invoiceDate: prev[order.id]?.invoiceDate,
+                                      shipmentDate: prev[order.id]?.shipmentDate,
+                                      certificateText: prev[order.id]?.certificateText,
+                                      insuranceCoveragePercent: prev[order.id]?.insuranceCoveragePercent,
                                     },
                                   }));
                                 }}
@@ -553,6 +581,149 @@ export default function CustomerOrdersPage() {
                                 Upload LC
                               </label>
                             </div>
+                            {(() => {
+                              const hasData = Boolean(
+                                lc.fileName ||
+                                  lc.invoiceNumber ||
+                                  lc.invoiceDate ||
+                                  lc.shipmentDate ||
+                                  lc.certificateText ||
+                                  lc.insuranceCoveragePercent !== undefined,
+                              );
+                              if (!hasData) {
+                                return (
+                                  <div className="rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-4">
+                                    <div className="flex items-center justify-between gap-3">
+                                      <div className="text-sm font-black text-gray-900">LC validation (UCP 600)</div>
+                                      <span className="inline-flex items-center rounded-full border border-gray-200/70 bg-white px-3 py-1 text-xs font-black text-gray-700">
+                                        Awaiting details
+                                      </span>
+                                    </div>
+                                    <div className="text-xs text-gray-500 mt-2">
+                                      Upload the LC document pack and fill the fields to detect bank discrepancies early.
+                                    </div>
+                                  </div>
+                                );
+                              }
+                              const validation = validateLcDocumentPack(order, lc);
+                              const issueCount = validation.errors.length + validation.warnings.length;
+                              return (
+                                <div className="rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-4">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div className="text-sm font-black text-gray-900">LC validation (UCP 600)</div>
+                                    {validation.passed ? (
+                                      <span className="inline-flex items-center rounded-full border border-green-200/70 bg-green-50 px-3 py-1 text-xs font-black text-green-800">
+                                        Validated
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center rounded-full border border-red-200/70 bg-red-50 px-3 py-1 text-xs font-black text-red-800">
+                                        Discrepancies {issueCount}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <div>
+                                      <div className="text-xs font-black text-gray-700 mb-1">Invoice number</div>
+                                      <input
+                                        value={lc.invoiceNumber ?? ""}
+                                        onChange={(e) =>
+                                          setLcState((prev) => ({
+                                            ...prev,
+                                            [order.id]: { ...prev[order.id], invoiceNumber: e.target.value },
+                                          }))
+                                        }
+                                        className="w-full rounded-xl border border-gray-200/70 bg-white px-3 py-2 text-sm font-semibold text-gray-800"
+                                        placeholder="e.g., INV-2026-000123"
+                                      />
+                                    </div>
+                                    <div>
+                                      <div className="text-xs font-black text-gray-700 mb-1">Invoice date</div>
+                                      <input
+                                        value={lc.invoiceDate ?? ""}
+                                        onChange={(e) =>
+                                          setLcState((prev) => ({
+                                            ...prev,
+                                            [order.id]: { ...prev[order.id], invoiceDate: e.target.value },
+                                          }))
+                                        }
+                                        className="w-full rounded-xl border border-gray-200/70 bg-white px-3 py-2 text-sm font-semibold text-gray-800"
+                                        placeholder="YYYY-MM-DD"
+                                      />
+                                    </div>
+                                    <div>
+                                      <div className="text-xs font-black text-gray-700 mb-1">Shipment date</div>
+                                      <input
+                                        value={lc.shipmentDate ?? ""}
+                                        onChange={(e) =>
+                                          setLcState((prev) => ({
+                                            ...prev,
+                                            [order.id]: { ...prev[order.id], shipmentDate: e.target.value },
+                                          }))
+                                        }
+                                        className="w-full rounded-xl border border-gray-200/70 bg-white px-3 py-2 text-sm font-semibold text-gray-800"
+                                        placeholder="YYYY-MM-DD"
+                                      />
+                                    </div>
+                                    <div>
+                                      <div className="text-xs font-black text-gray-700 mb-1">Insurance coverage (%)</div>
+                                      <input
+                                        value={lc.insuranceCoveragePercent?.toString() ?? ""}
+                                        onChange={(e) => {
+                                          const n = Number(e.target.value);
+                                          setLcState((prev) => ({
+                                            ...prev,
+                                            [order.id]: {
+                                              ...prev[order.id],
+                                              insuranceCoveragePercent: Number.isFinite(n) ? n : undefined,
+                                            },
+                                          }));
+                                        }}
+                                        inputMode="decimal"
+                                        className="w-full rounded-xl border border-gray-200/70 bg-white px-3 py-2 text-sm font-semibold text-gray-800"
+                                        placeholder="e.g., 110"
+                                      />
+                                    </div>
+                                    <div className="md:col-span-2">
+                                      <div className="text-xs font-black text-gray-700 mb-1">Certificate wording</div>
+                                      <textarea
+                                        value={lc.certificateText ?? ""}
+                                        onChange={(e) =>
+                                          setLcState((prev) => ({
+                                            ...prev,
+                                            [order.id]: { ...prev[order.id], certificateText: e.target.value },
+                                          }))
+                                        }
+                                        rows={3}
+                                        className="w-full rounded-xl border border-gray-200/70 bg-white px-3 py-2 text-sm font-semibold text-gray-800"
+                                        placeholder={`Include wording and reference ${order.id}`}
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {validation.errors.length > 0 && (
+                                    <div className="mt-4 rounded-2xl border border-red-200/70 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
+                                      <div className="font-black">Bank discrepancies</div>
+                                      <ul className="mt-2 list-disc pl-5 space-y-1">
+                                        {validation.errors.map((f, idx) => (
+                                          <li key={`${f.code}_${idx}`}>{f.message}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+                                  {validation.warnings.length > 0 && (
+                                    <div className="mt-3 rounded-2xl border border-amber-200/70 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+                                      <div className="font-black">Warnings</div>
+                                      <ul className="mt-2 list-disc pl-5 space-y-1">
+                                        {validation.warnings.map((f, idx) => (
+                                          <li key={`${f.code}_${idx}`}>{f.message}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
                             <Button
                               variant="outline"
                               className="w-full justify-start gap-2"

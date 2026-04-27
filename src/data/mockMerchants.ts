@@ -48,6 +48,8 @@ export type ComplianceDocument = {
 
 export type ComplianceStatus = "clear" | "under_review";
 
+export type TrustTier = "verified" | "gold_supplier" | "factory_verified";
+
 export type MockMerchant = {
   id: string;
   businessName: string;
@@ -81,6 +83,7 @@ export type MockMerchant = {
   payoutHold?: boolean;
   payoutHoldReason?: string;
   complianceRiskLevel?: RiskLevel;
+  trustTierOverride?: TrustTier;
   riskChecks: {
     emailVerified: boolean;
     phoneVerified: boolean;
@@ -139,11 +142,31 @@ export const mockMerchants: MockMerchant[] = [
         reviewedAt: "2026-04-02T09:00:00.000Z",
       },
       {
+        id: "m1_doc_owner",
+        documentType: "Owner ID / National ID",
+        fileUrl: "/mock/docs/m1-owner-id.pdf",
+        issueDate: "2021-01-01",
+        expiryDate: "2027-04-24",
+        status: "valid",
+        uploadedAt: "2026-04-01T10:00:00.000Z",
+        reviewedAt: "2026-04-02T09:00:00.000Z",
+      },
+      {
         id: "m1_doc_bank",
         documentType: "Bank Letter / IBAN Certificate",
         fileUrl: "/mock/docs/m1-bank.pdf",
         issueDate: "2026-01-05",
         expiryDate: "2027-01-05",
+        status: "valid",
+        uploadedAt: "2026-04-01T10:00:00.000Z",
+        reviewedAt: "2026-04-02T09:00:00.000Z",
+      },
+      {
+        id: "m1_doc_chamber",
+        documentType: "Chamber of Commerce Certificate",
+        fileUrl: "/mock/docs/m1-chamber.pdf",
+        issueDate: "2026-01-10",
+        expiryDate: "2027-01-10",
         status: "valid",
         uploadedAt: "2026-04-01T10:00:00.000Z",
         reviewedAt: "2026-04-02T09:00:00.000Z",

@@ -6,8 +6,8 @@ import { CustomerLayout } from "@/features/customer/CustomerLayout";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { loadSession } from "@/services/authStore";
-import { getCustomerById } from "@/services/adminService";
-import { Mail, Phone, User } from "lucide-react";
+import { getCustomerById, getCustomerTrustTier, getCustomerVerificationChecks, trustTierLabel } from "@/services/adminService";
+import { AlertTriangle, CheckCircle2, Mail, Phone, ShieldCheck, User } from "lucide-react";
 
 export default function CustomerProfilePage() {
   const [customerId, setCustomerId] = useState<string | null>(null);
@@ -22,6 +22,16 @@ export default function CustomerProfilePage() {
     if (!customerId) return null;
     return getCustomerById(customerId);
   }, [customerId]);
+
+  const verification = useMemo(() => {
+    if (!profile) return null;
+    return getCustomerVerificationChecks(profile);
+  }, [profile]);
+
+  const trustTier = useMemo(() => {
+    if (!profile) return null;
+    return getCustomerTrustTier(profile);
+  }, [profile]);
 
   return (
     <CustomerLayout>
@@ -106,7 +116,50 @@ export default function CustomerProfilePage() {
           )}
         </CardContent>
       </Card>
+
+      <Card className="mt-6">
+        <div className="p-6 border-b border-gray-100/60 flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-lg font-black text-gray-900">Verification</div>
+            <div className="text-sm text-gray-500 mt-1">Trust checks for buyer accounts (mock).</div>
+          </div>
+          <span
+            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-black ${
+              trustTier ? "border-green-200/70 bg-green-50 text-green-800" : "border-gray-200/70 bg-gray-50 text-gray-700"
+            }`}
+          >
+            <ShieldCheck className="w-4 h-4" />
+            {trustTier ? trustTierLabel(trustTier) : "Unverified"}
+          </span>
+        </div>
+        <CardContent className="p-6 space-y-3">
+          {!verification ? (
+            <div className="rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-3 text-sm text-gray-600">Loading…</div>
+          ) : (
+            ([
+              { label: "Commercial registration", ok: verification.commercialRegistration },
+              { label: "VAT registration", ok: verification.vatRegistration },
+              { label: "Bank account ownership", ok: verification.bankAccountOwnership },
+              { label: "Beneficial owner", ok: verification.beneficialOwner },
+            ] as const).map((item) => (
+              <div key={item.label} className="flex items-center justify-between rounded-2xl border border-gray-200/60 bg-white px-4 py-3">
+                <div className="text-sm font-semibold text-gray-800">{item.label}</div>
+                {item.ok ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-green-200/70 bg-green-50 px-3 py-1 text-xs font-black text-green-800">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Pass
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-200/70 bg-amber-50 px-3 py-1 text-xs font-black text-amber-800">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    Review
+                  </span>
+                )}
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
     </CustomerLayout>
   );
 }
-

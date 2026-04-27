@@ -10,7 +10,21 @@ import { seedOrdersIfEmpty } from "@/services/orderStore";
 import { type Order } from "@/types";
 import { FileDown, FileSearch, FileText, ShieldCheck } from "lucide-react";
 
-type LcUiState = Record<string, { uploaded: boolean; status: string; lastAction?: string; fileName?: string; invoiceUrl?: string }>;
+type LcUiState = Record<
+  string,
+  {
+    uploaded: boolean;
+    status: string;
+    lastAction?: string;
+    fileName?: string;
+    invoiceUrl?: string;
+    invoiceNumber?: string;
+    invoiceDate?: string;
+    shipmentDate?: string;
+    certificateText?: string;
+    insuranceCoveragePercent?: number;
+  }
+>;
 type ClaimState = Record<string, { status: string; amount: string; description: string }>;
 
 const safeJsonParse = <T,>(raw: string | null, fallback: T): T => {
@@ -238,4 +252,3 @@ export default function CustomerDocumentsPage() {
     </CustomerLayout>
   );
 }
-

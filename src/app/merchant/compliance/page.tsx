@@ -5,9 +5,17 @@ import { MerchantLayout } from "@/features/merchant/MerchantLayout";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { loadSession } from "@/services/authStore";
-import { getComplianceConfig, getMerchantById, runComplianceCheck, uploadComplianceDocumentReplacement } from "@/services/adminService";
+import {
+  getComplianceConfig,
+  getMerchantById,
+  getMerchantTrustTier,
+  getMerchantVerificationChecks,
+  runComplianceCheck,
+  trustTierLabel,
+  uploadComplianceDocumentReplacement,
+} from "@/services/adminService";
 import { type ComplianceDocument } from "@/data/mockMerchants";
-import { AlertTriangle, FileUp, ShieldCheck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileUp, ShieldCheck } from "lucide-react";
 
 const startOfDayUtc = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
 
@@ -49,6 +57,8 @@ export default function MerchantCompliancePage() {
   const documents = merchant?.complianceDocuments ?? [];
   const config = getComplianceConfig();
   const graceActive = documents.some((d) => isExpiredInGrace(d, config.gracePeriodDays));
+  const verification = merchant ? getMerchantVerificationChecks(merchant) : null;
+  const trustTier = merchant ? getMerchantTrustTier(merchant) : null;
 
   const categorized = {
     valid: documents.filter((d) => d.status === "valid"),
@@ -179,6 +189,57 @@ export default function MerchantCompliancePage() {
         </Card>
 
         <div className="space-y-6">
+          <Card>
+            <div className="p-6 border-b border-gray-100/60">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="text-lg font-black text-gray-900">Trust tier</div>
+                  <div className="text-sm text-gray-500 mt-1">Supplier verification status (mock).</div>
+                </div>
+                <span
+                  className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-black ${
+                    trustTier
+                      ? trustTier === "factory_verified"
+                        ? "border-purple-200/70 bg-purple-50 text-purple-800"
+                        : trustTier === "gold_supplier"
+                          ? "border-amber-200/70 bg-amber-50 text-amber-900"
+                          : "border-green-200/70 bg-green-50 text-green-800"
+                      : "border-gray-200/70 bg-gray-50 text-gray-700"
+                  }`}
+                >
+                  {trustTier ? trustTierLabel(trustTier) : "Unverified"}
+                </span>
+              </div>
+            </div>
+            <CardContent className="p-6 space-y-3">
+              {verification ? (
+                ([
+                  { label: "Commercial registration", ok: verification.commercialRegistration },
+                  { label: "VAT registration", ok: verification.vatRegistration },
+                  { label: "Bank account ownership", ok: verification.bankAccountOwnership },
+                  { label: "Beneficial owner", ok: verification.beneficialOwner },
+                ] as const).map((item) => (
+                  <div key={item.label} className="flex items-center justify-between rounded-2xl border border-gray-200/60 bg-white px-4 py-3">
+                    <div className="text-sm font-semibold text-gray-800">{item.label}</div>
+                    {item.ok ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-green-200/70 bg-green-50 px-3 py-1 text-xs font-black text-green-800">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        Pass
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-200/70 bg-amber-50 px-3 py-1 text-xs font-black text-amber-800">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        Review
+                      </span>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-3 text-sm text-gray-600">Loading…</div>
+              )}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardContent className="p-6">
               <div className="flex items-start gap-3">

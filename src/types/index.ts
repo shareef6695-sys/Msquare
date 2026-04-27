@@ -50,6 +50,10 @@ export interface Product {
   isFeatured?: boolean;
   isNewArrival?: boolean;
   isTopSelling?: boolean;
+  compliance?: {
+    saberCertified?: boolean;
+    fasahDeclared?: boolean;
+  };
 }
 
 export interface CartItem {

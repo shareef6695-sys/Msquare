@@ -11,6 +11,7 @@ import { getComplianceConfig, getMerchantById } from "@/services/adminService";
 import { addProduct } from "@/services/productService";
 import { MOCK_CATEGORIES } from "@/data/mockCategories";
 import { AIProductGenerator } from "@/components/ai/AIProductGenerator";
+import { evaluateProductCompliance } from "@/services/productComplianceService";
 
 const startOfDayUtc = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
 
@@ -46,6 +47,8 @@ export default function MerchantNewProductPage() {
     stock: "100",
     categoryId: MOCK_CATEGORIES[0]?.id ?? "c1",
     imageUrl: "https://via.placeholder.com/600x450.png?text=MSquare+Product",
+    saberCertified: false,
+    fasahDeclared: false,
   });
 
   useEffect(() => {
@@ -68,6 +71,33 @@ export default function MerchantNewProductPage() {
     }
     return { ok: true, reason: null as string | null };
   }, [merchant, teamRole]);
+
+  const saudiCompliance = useMemo(() => {
+    const dryRunId = "draft_product";
+    return evaluateProductCompliance(
+      {
+        id: dryRunId,
+        name: draft.name.trim() || "Draft product",
+        description: draft.description.trim() || "",
+        price: Number(draft.price) || 0,
+        minOrderQuantity: Math.max(1, Number(draft.minOrderQuantity) || 1),
+        stock: Math.max(0, Number(draft.stock) || 0),
+        images: [draft.imageUrl.trim() || "https://via.placeholder.com/600x450.png?text=MSquare+Product"],
+        categoryId: draft.categoryId,
+        merchantId: merchantId ?? "merchant_draft",
+        merchantName: merchant?.businessName ?? "Merchant",
+        location: merchant?.city ?? "Saudi Arabia",
+        rating: 0,
+        reviewsCount: 0,
+        salesCount: 0,
+        compliance: {
+          saberCertified: draft.saberCertified,
+          fasahDeclared: draft.fasahDeclared,
+        },
+      },
+      "Saudi Arabia",
+    );
+  }, [draft, merchant?.businessName, merchant?.city, merchantId]);
 
   return (
     <MerchantLayout>
@@ -197,6 +227,45 @@ export default function MerchantNewProductPage() {
             />
           </div>
 
+          <div className="rounded-2xl border border-gray-200/60 bg-gray-50 px-5 py-4">
+            <div className="text-sm font-black text-gray-900">Saudi compliance declarations</div>
+            <div className="mt-3 space-y-3">
+              <label className="flex items-center justify-between gap-3 rounded-xl border border-gray-200/70 bg-white px-4 py-3 text-sm font-semibold text-gray-700">
+                <span>SABER certification available</span>
+                <input
+                  type="checkbox"
+                  checked={draft.saberCertified}
+                  onChange={(e) => setDraft((d) => ({ ...d, saberCertified: e.target.checked }))}
+                  className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  disabled={busy}
+                />
+              </label>
+              <label className="flex items-center justify-between gap-3 rounded-xl border border-gray-200/70 bg-white px-4 py-3 text-sm font-semibold text-gray-700">
+                <span>FASAH declaration available</span>
+                <input
+                  type="checkbox"
+                  checked={draft.fasahDeclared}
+                  onChange={(e) => setDraft((d) => ({ ...d, fasahDeclared: e.target.checked }))}
+                  className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  disabled={busy}
+                />
+              </label>
+            </div>
+          </div>
+
+          {!saudiCompliance.passed && (
+            <div className="rounded-2xl border border-red-200/70 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
+              <div className="font-black">Product compliance violations (Saudi Arabia)</div>
+              <ul className="mt-2 list-disc pl-5 space-y-1">
+                {saudiCompliance.violations.map((v, idx) => (
+                  <li key={`${v.code}_${idx}`}>
+                    {v.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <div className="flex flex-col sm:flex-row sm:justify-end gap-3 pt-2">
             <Link href="/merchant/products">
               <Button variant="outline" disabled={busy}>
@@ -211,6 +280,9 @@ export default function MerchantNewProductPage() {
                 setBusy(true);
                 setError(null);
                 try {
+                  if (!saudiCompliance.passed) {
+                    throw new Error("Product compliance violations detected for Saudi Arabia (SABER/FASAH/category rules).");
+                  }
                   const nowIso = new Date().toISOString().slice(0, 10);
                   const created = addProduct({
                     name: draft.name.trim(),
@@ -227,6 +299,10 @@ export default function MerchantNewProductPage() {
                     reviewsCount: 0,
                     salesCount: 0,
                     createdAt: nowIso,
+                    compliance: {
+                      saberCertified: draft.saberCertified,
+                      fasahDeclared: draft.fasahDeclared,
+                    },
                   });
                   router.push(`/merchant/products/${created.id}`);
                 } catch (e) {

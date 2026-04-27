@@ -9,12 +9,20 @@ import { listProducts } from "@/services/productService";
 import { addToCart } from "@/services/cartStore";
 import { useRouter } from "next/navigation";
 import { AIRecommendationSection } from "@/components/ai/AIRecommendationSection";
+import { getMerchantById, getMerchantTrustTier, trustTierLabel } from "@/services/adminService";
+import { evaluateProductCompliance } from "@/services/productComplianceService";
 
 export default function ProductDetailsPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const product = useMemo(() => listProducts().find((p) => p.id === params.id) ?? null, [params.id]);
   const [qty, setQty] = useState<number>(() => Math.max(1, product?.minOrderQuantity ?? 1));
   const [toast, setToast] = useState<string | null>(null);
+  const merchant = useMemo(() => (product ? getMerchantById(product.merchantId) : null), [product]);
+  const trustTier = useMemo(() => (merchant ? getMerchantTrustTier(merchant) : null), [merchant]);
+  const saudiCompliance = useMemo(
+    () => (product ? evaluateProductCompliance(product, "Saudi Arabia") : null),
+    [product],
+  );
 
   if (!product) {
     return (
@@ -90,6 +98,17 @@ export default function ProductDetailsPage({ params }: { params: { id: string } 
               </div>
             </div>
 
+            {saudiCompliance && !saudiCompliance.passed && (
+              <div className="mb-8 rounded-2xl border border-red-200/70 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
+                <div className="font-black">Product compliance violations (Saudi Arabia)</div>
+                <ul className="mt-2 list-disc pl-5 space-y-1">
+                  {saudiCompliance.violations.map((v, idx) => (
+                    <li key={`${v.code}_${idx}`}>{v.message}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             <div className="flex flex-col sm:flex-row gap-4 mb-10">
               <div className="flex items-center border border-gray-200 rounded-lg">
                 <button
@@ -157,7 +176,9 @@ export default function ProductDetailsPage({ params }: { params: { id: string } 
               <div className="w-20 h-20 bg-gray-100 rounded-2xl flex-shrink-0" />
               <div>
                 <h3 className="text-xl font-bold text-gray-900 mb-1">{product.merchantName}</h3>
-                <p className="text-gray-500 text-sm mb-4">Verified Gold Supplier • 5 Years on MSquare</p>
+                <p className="text-gray-500 text-sm mb-4">
+                  {trustTier ? trustTierLabel(trustTier) : "Unverified"} • 5 Years on MSquare
+                </p>
                 <div className="flex gap-4">
                   <div className="text-center">
                     <p className="text-sm font-bold text-gray-900">4.9/5</p>
