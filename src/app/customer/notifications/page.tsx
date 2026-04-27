@@ -1,66 +1,118 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import clsx from "clsx";
 import { CustomerLayout } from "@/features/customer/CustomerLayout";
-import { Card, CardContent } from "@/components/ui/Card";
+import { Card, CardContent, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
+import { StatusPill } from "@/components/ui/StatusPill";
 import { loadSession } from "@/services/authStore";
 import {
+  getUnreadCountForTargets,
   listMockNotificationsForTargets,
   markAllNotificationsReadForTargets,
   markNotificationRead,
   type MockNotification,
 } from "@/services/emailService";
-import { Bell, CheckCircle2 } from "lucide-react";
 
 export default function CustomerNotificationsPage() {
-  const [email, setEmail] = useState<string | null>(null);
-  const [phone, setPhone] = useState<string | null>(null);
-  const [items, setItems] = useState<MockNotification[]>([]);
+  const [targets, setTargets] = useState<string[]>([]);
+  const [onlyUnread, setOnlyUnread] = useState(false);
+  const [channel, setChannel] = useState<"all" | "dashboard" | "email" | "sms">("all");
   const [refreshKey, setRefreshKey] = useState(0);
-  const [filter, setFilter] = useState<"all" | "orders" | "payments" | "shipments" | "documents" | "disputes">("all");
 
   useEffect(() => {
     const session = loadSession();
     if (!session || session.user.role !== "CUSTOMER") return;
-    setEmail(session.user.email);
-    setPhone(session.user.phone ?? null);
+    const out = [session.user.email, session.user.phone].filter(Boolean) as string[];
+    setTargets(out);
   }, []);
 
-  const targets = useMemo(() => [email, phone].filter(Boolean) as string[], [email, phone]);
+  const notifications = useMemo(() => {
+    refreshKey;
+    if (targets.length === 0) return [] as MockNotification[];
+    const raw = listMockNotificationsForTargets({ targets, limit: 200 });
+    const filtered = raw
+      .filter((n) => (channel === "all" ? true : n.channel === channel))
+      .filter((n) => (onlyUnread ? !n.readAt : true))
+      .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+    return filtered;
+  }, [channel, onlyUnread, refreshKey, targets]);
 
-  useEffect(() => {
-    if (targets.length === 0) return;
-    setItems(listMockNotificationsForTargets({ targets, limit: 200 }));
-  }, [targets, refreshKey]);
+  const unreadCount = useMemo(() => {
+    refreshKey;
+    return targets.length ? getUnreadCountForTargets(targets) : 0;
+  }, [refreshKey, targets]);
 
-  const filtered = useMemo(() => {
-    if (filter === "all") return items;
-    const match = (n: MockNotification) => {
-      const hay = `${n.subject ?? ""} ${n.title ?? ""} ${n.message ?? ""}`.toLowerCase();
-      if (filter === "orders") return hay.includes("order") || hay.includes("checkout");
-      if (filter === "payments") return hay.includes("payment") || hay.includes("escrow") || hay.includes("payout") || hay.includes("lc");
-      if (filter === "shipments") return hay.includes("ship") || hay.includes("tracking") || hay.includes("delivery") || hay.includes("carrier");
-      if (filter === "documents") return hay.includes("document") || hay.includes("invoice") || hay.includes("proforma") || hay.includes("upload");
-      if (filter === "disputes") return hay.includes("dispute") || hay.includes("claim") || hay.includes("insurance");
-      return true;
-    };
-    return items.filter(match);
-  }, [filter, items]);
-
-  const unreadCount = useMemo(() => items.filter((n) => !n.readAt).length, [items]);
+  const columns: Array<DataTableColumn<MockNotification>> = useMemo(
+    () => [
+      {
+        key: "title",
+        header: "Notification",
+        sortable: true,
+        render: (n) => (
+          <div className="min-w-0">
+            <div className="font-black text-gray-900 truncate">{n.title ?? n.subject ?? "Update"}</div>
+            <div className="text-sm text-gray-600 mt-1 line-clamp-2">{n.message}</div>
+            <div className="text-xs font-semibold text-gray-500 mt-2">{new Date(n.createdAt).toLocaleString()}</div>
+          </div>
+        ),
+        value: (n) => n.title ?? n.subject ?? n.message,
+      },
+      {
+        key: "channel",
+        header: "Channel",
+        sortable: true,
+        render: (n) => <StatusPill status={n.channel.toUpperCase()} />,
+        value: (n) => n.channel,
+      },
+      {
+        key: "status",
+        header: "Read",
+        sortable: true,
+        render: (n) => <StatusPill status={n.readAt ? "READ" : "UNREAD"} />,
+        value: (n) => (n.readAt ? 1 : 0),
+      },
+      {
+        key: "actions",
+        header: "",
+        render: (n) => (
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={Boolean(n.readAt)}
+              onClick={() => {
+                markNotificationRead(n.id);
+                setRefreshKey((k) => k + 1);
+              }}
+            >
+              Mark read
+            </Button>
+          </div>
+        ),
+      },
+    ],
+    [],
+  );
 
   return (
     <CustomerLayout>
-      <div className="mb-8 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-        <div>
+      <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-6">
+        <div className="min-w-0">
           <h1 className="text-2xl font-black tracking-tight text-gray-900">Notifications</h1>
-          <p className="text-gray-500">In-app notification center (mock).</p>
+          <p className="text-sm text-gray-500 mt-1">Email, SMS, and dashboard updates for your account.</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2">
+          <div className="rounded-2xl border border-gray-200/60 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 shadow-sm shadow-gray-900/5">
+            <div className="text-[11px] font-black uppercase tracking-widest text-gray-400">Unread</div>
+            <div className="mt-1 text-lg font-black text-gray-900">{unreadCount}</div>
+          </div>
           <Button
             variant="outline"
             onClick={() => {
+              if (targets.length === 0) return;
               markAllNotificationsReadForTargets(targets);
               setRefreshKey((k) => k + 1);
             }}
@@ -71,87 +123,56 @@ export default function CustomerNotificationsPage() {
         </div>
       </div>
 
-      <Card>
-        <div className="p-6 border-b border-gray-100/60 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200/60 flex items-center justify-center text-amber-800">
-              <Bell className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-lg font-black text-gray-900">All notifications</div>
-              <div className="text-xs text-gray-500 mt-1">
-                {items.length} total • {unreadCount} unread
+      <div className="grid grid-cols-12 gap-4">
+        <Card className="col-span-12">
+          <CardHeader className="p-4 sm:p-6">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-lg font-black text-gray-900">Activity feed</div>
+                <div className="text-sm text-gray-500">Filter and search your notifications.</div>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <select
+                  value={channel}
+                  onChange={(e) => setChannel(e.target.value as any)}
+                  className="rounded-xl border border-gray-200/60 bg-white px-4 py-2.5 text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                >
+                  <option value="all">All channels</option>
+                  <option value="dashboard">Dashboard</option>
+                  <option value="email">Email</option>
+                  <option value="sms">SMS</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setOnlyUnread((v) => !v)}
+                  className={clsx(
+                    "inline-flex items-center justify-center rounded-xl border px-4 py-2.5 text-sm font-black transition-colors",
+                    onlyUnread ? "border-primary-200/70 bg-primary-50 text-primary-700" : "border-gray-200/60 bg-white text-gray-800 hover:bg-gray-50",
+                  )}
+                >
+                  {onlyUnread ? "Unread only" : "All"}
+                </button>
               </div>
             </div>
-          </div>
-        </div>
-        <CardContent className="p-6">
-          <div className="flex flex-wrap gap-2 mb-5">
-            {[
-              { key: "all" as const, label: "All" },
-              { key: "orders" as const, label: "Orders" },
-              { key: "payments" as const, label: "Payments" },
-              { key: "shipments" as const, label: "Shipments" },
-              { key: "documents" as const, label: "Documents" },
-              { key: "disputes" as const, label: "Disputes" },
-            ].map((t) => (
-              <button
-                key={t.key}
-                className={`rounded-full border px-4 py-2 text-sm font-semibold transition-colors ${
-                  filter === t.key ? "border-primary-200/70 bg-primary-50 text-primary-800" : "border-gray-200/60 bg-white text-gray-700 hover:bg-gray-50"
-                }`}
-                onClick={() => setFilter(t.key)}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          {filtered.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-gray-200 bg-gray-50 p-12 text-center">
-              <div className="text-lg font-black text-gray-900">No notifications</div>
-              <div className="text-sm text-gray-500 mt-2">Try a different filter or trigger mock events (orders, LC uploads, disputes).</div>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {filtered.map((n) => (
-                <button
-                  key={n.id}
-                  type="button"
-                  className={`w-full text-left rounded-3xl border px-5 py-4 transition-colors ${
-                    n.readAt ? "border-gray-200/60 bg-white hover:bg-gray-50" : "border-primary-200/70 bg-primary-50/40 hover:bg-primary-50/60"
-                  }`}
-                  onClick={() => {
-                    markNotificationRead(n.id);
-                    setRefreshKey((k) => k + 1);
-                  }}
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <div className="text-xs font-black text-gray-900">
-                        {n.channel.toUpperCase()}
-                        {n.subject ? ` • ${n.subject}` : n.title ? ` • ${n.title}` : ""}
-                      </div>
-                      <div className="text-sm text-gray-700 mt-1">{n.message}</div>
-                      <div className="text-[11px] text-gray-500 mt-2">{new Date(n.createdAt).toLocaleString()}</div>
-                    </div>
-                    {n.readAt ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200/70 bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-800 whitespace-nowrap">
-                        <CheckCircle2 className="w-4 h-4" />
-                        Read
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center rounded-full border border-primary-200/70 bg-primary-50 px-3 py-1 text-xs font-black text-primary-800 whitespace-nowrap">
-                        Unread
-                      </span>
-                    )}
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardHeader>
+          <CardContent className="p-4 sm:p-6">
+            <DataTable
+              rows={notifications}
+              columns={columns}
+              getRowId={(n) => n.id}
+              initialSort={{ key: "title", dir: "asc" }}
+              searchPlaceholder="Search notifications…"
+              searchKeys={[
+                (n) => n.title,
+                (n) => n.subject,
+                (n) => n.message,
+                (n) => n.channel,
+                (n) => (n.readAt ? "read" : "unread"),
+              ]}
+            />
+          </CardContent>
+        </Card>
+      </div>
     </CustomerLayout>
   );
 }
