@@ -12,7 +12,7 @@ import { addProduct } from "@/services/productService";
 import { MOCK_CATEGORIES } from "@/data/mockCategories";
 import { AIProductGenerator } from "@/components/ai/AIProductGenerator";
 import { evaluateProductCompliance } from "@/services/productComplianceService";
-import { supabase } from "@/lib/supabase";
+import { requireSupabase } from "@/lib/supabase";
 
 const startOfDayUtc = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
 
@@ -124,7 +124,8 @@ export default function MerchantNewProductPage() {
     const id = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Date.now());
     const path = `merchants/${merchantId}/${base}-${id}${ext || ".png"}`;
 
-    const res = await supabase.storage.from("product-images").upload(path, file, {
+    const sb = requireSupabase();
+    const res = await sb.storage.from("product-images").upload(path, file, {
       cacheControl: "3600",
       upsert: false,
       contentType: file.type,
@@ -132,7 +133,7 @@ export default function MerchantNewProductPage() {
 
     if (res.error) throw new Error(res.error.message);
 
-    const pub = supabase.storage.from("product-images").getPublicUrl(path);
+    const pub = sb.storage.from("product-images").getPublicUrl(path);
     const url = pub.data.publicUrl;
     if (!url) throw new Error("Upload succeeded, but public URL was not returned.");
     return url;
