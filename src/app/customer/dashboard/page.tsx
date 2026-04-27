@@ -3,10 +3,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { CustomerLayout } from "@/features/customer/CustomerLayout";
-import { Card, CardContent, CardHeader } from "@/components/ui/Card";
+import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
-import { StatusPill } from "@/components/ui/StatusPill";
 import { getResolvedCartItems } from "@/services/cartStore";
 import { loadOrders, seedOrdersIfEmpty } from "@/services/orderStore";
 import { loadSession } from "@/services/authStore";
@@ -16,23 +14,7 @@ import { SUPPORTED_CURRENCIES, convertCurrency, formatCurrency } from "@/utils/c
 import { getMerchantById } from "@/services/adminService";
 import { listProducts } from "@/services/productService";
 import { MOCK_CATEGORIES } from "@/data/mockCategories";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { AlertTriangle, Bell, Gavel, MapPin, ShieldCheck, ShoppingBag, Sparkles, Truck } from "lucide-react";
-import { getUnreadCountForTargets, listMockNotificationsForTargets } from "@/services/emailService";
+import { AlertTriangle, Gavel, MapPin, Search, ShieldCheck, ShoppingBag, Sparkles, Truck } from "lucide-react";
 
 const defaultCurrency = (): CurrencyCode => {
   const raw = (process.env.NEXT_PUBLIC_DEFAULT_CURRENCY as CurrencyCode | undefined) ?? "SAR";
@@ -66,6 +48,15 @@ const safeJsonParse = <T,>(raw: string | null, fallback: T): T => {
   }
 };
 
+const statusBadge = (status: string) => {
+  const s = status.toUpperCase();
+  if (s === "DELIVERED" || s === "COMPLETED" || s === "RELEASED") return "border-green-200/70 bg-green-50 text-green-800";
+  if (s === "SHIPPED") return "border-blue-200/70 bg-blue-50 text-blue-800";
+  if (s === "PROCESSING" || s === "PAID" || s.includes("UNDER")) return "border-amber-200/70 bg-amber-50 text-amber-800";
+  if (s === "CANCELLED" || s === "FAILED" || s === "REJECTED") return "border-red-200/70 bg-red-50 text-red-700";
+  return "border-gray-200/70 bg-gray-50 text-gray-700";
+};
+
 const monthKey = (iso: string) => {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "Unknown";
@@ -73,6 +64,26 @@ const monthKey = (iso: string) => {
   const m = d.getMonth();
   const label = d.toLocaleString(undefined, { month: "short" });
   return `${y}-${String(m + 1).padStart(2, "0")}|${label}`;
+};
+
+const MiniBarChart = ({ title, data }: { title: string; data: Array<{ label: string; value: number }> }) => {
+  const max = Math.max(1, ...data.map((d) => d.value));
+  return (
+    <div className="rounded-3xl border border-gray-200/60 bg-white p-6">
+      <div className="text-sm font-black text-gray-900">{title}</div>
+      <div className="mt-4 space-y-2">
+        {data.map((d) => (
+          <div key={d.label} className="flex items-center gap-3">
+            <div className="w-16 text-xs font-semibold text-gray-500">{d.label}</div>
+            <div className="flex-1 h-2.5 rounded-full bg-gray-100 overflow-hidden">
+              <div className="h-full rounded-full bg-primary-600" style={{ width: `${Math.max(3, (d.value / max) * 100)}%` }} />
+            </div>
+            <div className="w-12 text-right text-xs font-black text-gray-700">{Math.round(d.value)}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 };
 
 export default function CustomerDashboardPage() {
@@ -87,6 +98,8 @@ export default function CustomerDashboardPage() {
   const [disputeState, setDisputeState] = useState<DisputeState>({});
   const [claimState, setClaimState] = useState<ClaimState>({});
   const [savedMerchants, setSavedMerchants] = useState<string[]>([]);
+  const [orderQuery, setOrderQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
   const { loading: ratesLoading, result: ratesResult } = useExchangeRatesUsd();
   const ratesUsd = ratesResult?.ratesUsd;
@@ -157,6 +170,16 @@ export default function CustomerDashboardPage() {
   const recentOrders = useMemo(() => {
     return [...orders].sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "")).slice(0, 5);
   }, [orders]);
+
+  const filteredRecentOrders = useMemo(() => {
+    const q = orderQuery.trim().toLowerCase();
+    const f = statusFilter.trim().toLowerCase();
+    return recentOrders.filter((o) => {
+      const okQuery = !q || o.id.toLowerCase().includes(q) || (o.tracking?.trackingNumber ?? "").toLowerCase().includes(q);
+      const okStatus = f === "all" || o.status.toLowerCase() === f;
+      return okQuery && okStatus;
+    });
+  }, [orderQuery, recentOrders, statusFilter]);
 
   const activeOrders = useMemo(() => {
     return orders.filter((o) => o.status !== "DELIVERED" && o.status !== "CANCELLED").length;
@@ -331,279 +354,113 @@ export default function CustomerDashboardPage() {
     return { tickets: tickets.length };
   }, [customerId]);
 
-  const notificationTargets = useMemo(() => [email, phone].filter(Boolean) as string[], [email, phone]);
-
-  const unreadNotifications = useMemo(() => {
-    if (notificationTargets.length === 0) return 0;
-    return getUnreadCountForTargets(notificationTargets);
-  }, [notificationTargets]);
-
-  const recentNotifications = useMemo(() => {
-    if (notificationTargets.length === 0) return [];
-    return listMockNotificationsForTargets({ targets: notificationTargets, limit: 5 }).sort((a, b) =>
-      (b.createdAt ?? "").localeCompare(a.createdAt ?? ""),
-    );
-  }, [notificationTargets]);
-
-  const paymentStatusBreakdown = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const o of orders) map.set(o.paymentStatus, (map.get(o.paymentStatus) ?? 0) + 1);
-    const out = Array.from(map.entries()).map(([name, value]) => ({ name, value }));
-    const order = ["PENDING", "COMPLETED", "FAILED", "REFUNDED"];
-    out.sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
-    return out;
-  }, [orders]);
-
-  const rfqs = useMemo(() => {
-    const topCategories = categorySpending.map((c) => c.label).slice(0, 2);
-    const suppliers = savedMerchants.length > 0 ? savedMerchants : Array.from(new Set(orders.map((o) => o.merchantId))).slice(0, 3);
-    return suppliers.slice(0, 4).map((id, idx) => ({
-      id: `RFQ-${String(idx + 1).padStart(3, "0")}`,
-      supplier: getMerchantById(id)?.businessName ?? id,
-      category: topCategories[idx % Math.max(1, topCategories.length)] ?? "General",
-      status: idx % 3 === 0 ? "PENDING" : idx % 3 === 1 ? "APPROVED" : "REJECTED",
-      createdAt: new Date(Date.now() - (idx + 1) * 24 * 60 * 60 * 1000).toISOString(),
-    }));
-  }, [categorySpending, orders, savedMerchants]);
-
-  const orderColumns: Array<DataTableColumn<Order>> = useMemo(
-    () => [
-      {
-        key: "id",
-        header: "Order",
-        sortable: true,
-        render: (o) => (
-          <div className="min-w-0">
-            <div className="font-black text-gray-900 truncate">{o.id}</div>
-            <div className="text-xs font-semibold text-gray-500 truncate">{new Date(o.createdAt).toLocaleDateString()}</div>
-          </div>
-        ),
-        value: (o) => o.id,
-      },
-      {
-        key: "merchant",
-        header: "Merchant",
-        sortable: true,
-        render: (o) => <span className="font-semibold text-gray-700">{getMerchantById(o.merchantId)?.businessName ?? o.merchantId}</span>,
-        value: (o) => getMerchantById(o.merchantId)?.businessName ?? o.merchantId,
-      },
-      {
-        key: "status",
-        header: "Status",
-        sortable: true,
-        render: (o) => <StatusPill status={o.status} />,
-        value: (o) => o.status,
-      },
-      {
-        key: "payment",
-        header: "Payment",
-        sortable: true,
-        render: (o) => <StatusPill status={o.paymentStatus} />,
-        value: (o) => o.paymentStatus,
-      },
-      {
-        key: "tracking",
-        header: "Tracking",
-        sortable: false,
-        render: (o) => {
-          const lastEvent = o.tracking?.events?.[o.tracking.events.length - 1];
-          return (
-            <div className="min-w-0">
-              <div className="font-semibold text-gray-700 truncate">{o.tracking?.trackingNumber ?? "Pending"}</div>
-              <div className="text-xs font-semibold text-gray-500 truncate">{lastEvent?.status ?? "—"}</div>
-            </div>
-          );
-        },
-        value: (o) => o.tracking?.trackingNumber ?? "",
-      },
-      {
-        key: "amount",
-        header: "Amount",
-        sortable: true,
-        className: "text-right",
-        render: (o) => {
-          const originalAmount = o.originalAmount ?? o.totalAmount ?? 0;
-          const originalCurrency = (o.originalCurrency ?? defaultCurrency()) as CurrencyCode;
-          const converted =
-            ratesUsd && originalCurrency !== displayCurrency
-              ? convertCurrency(originalAmount, originalCurrency, displayCurrency, ratesUsd).convertedAmount
-              : null;
-          return (
-            <div className="text-right">
-              <div className="font-black text-gray-900">{formatCurrency(originalAmount, originalCurrency)}</div>
-              {converted !== null ? <div className="text-[11px] font-semibold text-gray-500 mt-1">≈ {formatCurrency(converted, displayCurrency)}</div> : null}
-            </div>
-          );
-        },
-        value: (o) => o.originalAmount ?? o.totalAmount ?? 0,
-      },
-      {
-        key: "action",
-        header: "",
-        className: "text-right",
-        render: (o) => (
-          <Link href={`/customer/orders/${o.id}`} className="text-primary-700 hover:text-primary-800 font-black whitespace-nowrap">
-            View
-          </Link>
-        ),
-      },
-    ],
-    [displayCurrency, ratesUsd],
-  );
-
   return (
     <CustomerLayout>
-      <div className="mb-8 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black tracking-tight text-gray-900">Customer Dashboard</h1>
-          <p className="text-gray-500">Orders, tracking, and protection status (mock).</p>
-        </div>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <div className="rounded-2xl border border-gray-200/60 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 shadow-sm shadow-gray-900/5">
-            <div className="text-[11px] font-black uppercase tracking-widest text-gray-400">Currency</div>
-            <select
-              value={displayCurrency}
-              onChange={(e) => setDisplayCurrency(e.target.value as CurrencyCode)}
-              className="mt-1 w-full bg-transparent text-sm font-black text-gray-900 focus:outline-none"
-              disabled={!customerId}
-            >
-              {SUPPORTED_CURRENCIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
+      <div className="grid grid-cols-12 gap-6">
+        <div className="col-span-12 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-black tracking-tight text-gray-900">Customer Dashboard</h1>
+            <p className="text-gray-500">Orders, tracking, and protection status (mock).</p>
           </div>
-          <Link href="/marketplace">
-            <Button variant="outline">Browse marketplace</Button>
-          </Link>
-          <Link href="/customer/cart">
-            <Button>Cart ({cart.items.length})</Button>
-          </Link>
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="grid grid-cols-12 gap-4 mb-6">
-          {[0, 1, 2, 3].map((i) => (
-            <Card key={i} className="col-span-12 sm:col-span-6 lg:col-span-3">
-              <CardContent className="p-4 sm:p-6">
-                <div className="h-3 w-24 rounded bg-gray-100" />
-                <div className="mt-4 h-7 w-28 rounded bg-gray-100" />
-                <div className="mt-3 h-3 w-40 rounded bg-gray-100" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-12 gap-4 mb-6">
-          {[
-            { label: "Total orders", value: String(totalOrders), icon: <ShoppingBag className="w-5 h-5" />, tone: "bg-blue-50 border-blue-200/60 text-blue-700" },
-            { label: "Active orders", value: String(activeOrders), icon: <Truck className="w-5 h-5" />, tone: "bg-amber-50 border-amber-200/60 text-amber-800" },
-            { label: "Completed", value: String(completedOrders), icon: <ShieldCheck className="w-5 h-5" />, tone: "bg-emerald-50 border-emerald-200/60 text-emerald-700" },
-            { label: "Pending payments", value: String(pendingPayments), icon: <AlertTriangle className="w-5 h-5" />, tone: "bg-purple-50 border-purple-200/60 text-purple-700" },
-          ].map((s) => (
-            <Card key={s.label} className="col-span-12 sm:col-span-6 lg:col-span-3">
-              <CardContent className="p-4 sm:p-6 flex items-center gap-4">
-                <div className={`w-11 h-11 rounded-2xl border flex items-center justify-center ${s.tone}`}>{s.icon}</div>
-                <div className="min-w-0">
-                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-widest">{s.label}</div>
-                  <div className="text-xl font-black text-gray-900 mt-1">{s.value}</div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      <div className="grid grid-cols-12 gap-4 mb-6">
-        <Card className="col-span-12 lg:col-span-8">
-          <CardHeader className="p-4 sm:p-6 flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div className="text-lg font-black text-gray-900">Spending overview</div>
-              <div className="text-sm text-gray-500 mt-1">Trends and totals (mock).</div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="rounded-2xl border border-gray-200/60 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 shadow-sm shadow-gray-900/5">
+              <div className="text-[11px] font-black uppercase tracking-widest text-gray-400">Currency</div>
+              <select
+                value={displayCurrency}
+                onChange={(e) => setDisplayCurrency(e.target.value as CurrencyCode)}
+                className="mt-1 w-full bg-transparent text-sm font-black text-gray-900 focus:outline-none"
+                disabled={!customerId}
+              >
+                {SUPPORTED_CURRENCIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
             </div>
-            <div className="text-right">
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Total spent</div>
+            <Link href="/marketplace">
+              <Button variant="outline">Browse marketplace</Button>
+            </Link>
+            <Link href="/customer/cart">
+              <Button>Cart ({cart.items.length})</Button>
+            </Link>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="col-span-12 grid grid-cols-12 gap-6">
+            {[0, 1, 2, 3].map((i) => (
+              <Card key={i} className="col-span-12 sm:col-span-6 lg:col-span-3">
+                <CardContent className="p-6">
+                  <div className="h-3 w-24 rounded bg-gray-100" />
+                  <div className="mt-4 h-7 w-28 rounded bg-gray-100" />
+                  <div className="mt-3 h-3 w-40 rounded bg-gray-100" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <div className="col-span-12 grid grid-cols-12 gap-6">
+            {[
+              { label: "Total orders", value: String(totalOrders), icon: <ShoppingBag className="w-5 h-5" />, tone: "bg-blue-50 border-blue-200/60 text-blue-700" },
+              { label: "Active orders", value: String(activeOrders), icon: <Truck className="w-5 h-5" />, tone: "bg-amber-50 border-amber-200/60 text-amber-800" },
+              { label: "Completed", value: String(completedOrders), icon: <ShieldCheck className="w-5 h-5" />, tone: "bg-emerald-50 border-emerald-200/60 text-emerald-700" },
+              { label: "Pending payments", value: String(pendingPayments), icon: <AlertTriangle className="w-5 h-5" />, tone: "bg-purple-50 border-purple-200/60 text-purple-700" },
+            ].map((s) => (
+              <Card key={s.label} className="col-span-12 sm:col-span-6 lg:col-span-3">
+                <CardContent className="p-6 flex items-center gap-4">
+                  <div className={`w-11 h-11 rounded-2xl border flex items-center justify-center ${s.tone}`}>{s.icon}</div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-widest">{s.label}</div>
+                    <div className="text-xl font-black text-gray-900 mt-1">{s.value}</div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        <Card className="col-span-12 lg:col-span-8">
+          <div className="p-6 border-b border-gray-100/60 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <div className="text-lg font-black text-gray-900">Spending overview</div>
+              <div className="text-sm text-gray-500 mt-1">Totals and monthly spending (mock).</div>
+            </div>
+            <div className="sm:text-right">
+              <div className="text-xs text-gray-500">Total spending</div>
               <div className="text-xl font-black text-gray-900">{formatCurrency(totalSpent, displayCurrency)}</div>
               <div className="text-[11px] text-gray-500 mt-1">
                 {ratesLoading ? (
                   <span>Loading exchange rate…</span>
                 ) : ratesResult ? (
                   <span>
-                    Updated {new Date(ratesResult.updatedAt).toLocaleString()}
-                    {ratesResult.usedFallback ? " • Using last available rate" : ""}
-                    {ratesResult.stale ? " • May be outdated" : ""}
+                    Converted using live exchange rate • Last updated: {new Date(ratesResult.updatedAt).toLocaleString()}
+                    {ratesResult.usedFallback ? " • Using last available exchange rate" : ""}
+                    {ratesResult.stale ? " • Rate may be outdated" : ""}
                   </span>
                 ) : null}
               </div>
             </div>
-          </CardHeader>
-          <CardContent className="p-4 sm:p-6 grid grid-cols-12 gap-4">
-            <div className="col-span-12 xl:col-span-7">
-              <div className="text-sm font-black text-gray-900">Monthly spending</div>
-              <div className="text-sm text-gray-500 mt-1">Last 6 months • {displayCurrency}</div>
-              <div className="mt-4 h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={monthlySpending}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                    <XAxis dataKey="label" tick={{ fill: "#6b7280", fontSize: 12 }} />
-                    <YAxis tick={{ fill: "#6b7280", fontSize: 12 }} />
-                    <Tooltip
-                      formatter={(v: any) => formatCurrency(Number(v) || 0, displayCurrency)}
-                      contentStyle={{ borderRadius: 12, borderColor: "#e5e7eb" }}
-                    />
-                    <Line type="monotone" dataKey="value" stroke="#2563eb" strokeWidth={2.5} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-            <div className="col-span-12 xl:col-span-5">
-              <div className="text-sm font-black text-gray-900">Orders by status</div>
-              <div className="text-sm text-gray-500 mt-1">Distribution</div>
-              <div className="mt-4 h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Tooltip contentStyle={{ borderRadius: 12, borderColor: "#e5e7eb" }} />
-                    <Legend verticalAlign="bottom" height={36} />
-                    <Pie
-                      data={ordersByStatus.map((x) => ({ name: x.label, value: x.value }))}
-                      dataKey="value"
-                      nameKey="name"
-                      innerRadius={55}
-                      outerRadius={85}
-                      paddingAngle={2}
-                    >
-                      {ordersByStatus.map((_, idx) => (
-                        <Cell key={idx} fill={["#2563eb", "#f59e0b", "#10b981", "#0ea5e9", "#8b5cf6", "#ef4444"][idx % 6]} />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
+          </div>
+          <CardContent className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <MiniBarChart title="Monthly spending" data={monthlySpending} />
+            <MiniBarChart title="Orders by status" data={ordersByStatus.map((x) => ({ label: x.label, value: x.value }))} />
           </CardContent>
         </Card>
 
-        <div className="col-span-12 lg:col-span-4 space-y-4">
-          <Card id="payments">
-            <CardHeader className="p-4 sm:p-6">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="text-lg font-black text-gray-900">Payments</div>
-                  <div className="text-sm text-gray-500 mt-1">Status and protection</div>
-                </div>
+        <div className="col-span-12 lg:col-span-4 space-y-6">
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-start gap-3">
                 <div className="w-11 h-11 rounded-2xl bg-primary-50 border border-primary-200/60 flex items-center justify-center text-primary-700">
                   <ShieldCheck className="w-5 h-5" />
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent className="p-4 sm:p-6">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-3">
-                  <div className="text-xs font-bold uppercase tracking-widest text-gray-400">Pending</div>
-                  <div className="text-lg font-black text-gray-900 mt-1">{pendingPayments}</div>
+                <div className="min-w-0">
+                  <div className="text-lg font-black text-gray-900">Payment protection</div>
+                  <div className="text-sm text-gray-500 mt-1">Your orders are protected by MSquare Trade Assurance.</div>
                 </div>
+              </div>
+              <div className="mt-5 grid grid-cols-2 gap-3">
                 <div className="rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-3">
                   <div className="text-xs font-bold uppercase tracking-widest text-gray-400">Escrow</div>
                   <div className="text-lg font-black text-gray-900 mt-1">{protection.escrowProtected}</div>
@@ -616,85 +473,56 @@ export default function CustomerDashboardPage() {
                   <div className="text-xs font-bold uppercase tracking-widest text-gray-400">Insured</div>
                   <div className="text-lg font-black text-gray-900 mt-1">{protection.insured}</div>
                 </div>
-              </div>
-
-              <div className="mt-5">
-                <div className="text-sm font-black text-gray-900">Payment status</div>
-                <div className="mt-3 h-44">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Tooltip contentStyle={{ borderRadius: 12, borderColor: "#e5e7eb" }} />
-                      <Pie data={paymentStatusBreakdown} dataKey="value" nameKey="name" innerRadius={45} outerRadius={70} paddingAngle={2}>
-                        {paymentStatusBreakdown.map((_, idx) => (
-                          <Cell key={idx} fill={["#f59e0b", "#10b981", "#ef4444", "#8b5cf6"][idx % 4]} />
-                        ))}
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
+                <div className="rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-3">
+                  <div className="text-xs font-bold uppercase tracking-widest text-gray-400">Disputes</div>
+                  <div className="text-lg font-black text-gray-900 mt-1">{openDisputes}</div>
                 </div>
               </div>
-
-              <Link href="/customer/orders" className="mt-5 block">
+              <Link href="/customer/support" className="mt-5 block">
                 <Button variant="outline" className="w-full">
-                  View payments
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
-
-          <Card id="notifications">
-            <CardHeader className="p-4 sm:p-6">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="text-lg font-black text-gray-900">Notifications</div>
-                  <div className="text-sm text-gray-500 mt-1">{unreadNotifications} unread</div>
-                </div>
-                <div className="w-11 h-11 rounded-2xl bg-gray-50 border border-gray-200/60 flex items-center justify-center text-gray-700">
-                  <Bell className="w-5 h-5" />
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="p-4 sm:p-6">
-              {recentNotifications.length === 0 ? (
-                <div className="rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-3 text-sm text-gray-600">No notifications yet.</div>
-              ) : (
-                <div className="space-y-3 max-h-56 overflow-y-auto no-scrollbar">
-                  {recentNotifications.slice(0, 4).map((n) => (
-                    <div key={n.id} className="rounded-2xl border border-gray-200/60 bg-white p-4">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="min-w-0">
-                          <div className="text-sm font-black text-gray-900 truncate">{n.title ?? n.subject ?? "Update"}</div>
-                          <div className="text-sm text-gray-600 mt-1 line-clamp-2">{n.message}</div>
-                          <div className="text-xs font-semibold text-gray-500 mt-2">{new Date(n.createdAt).toLocaleString()}</div>
-                        </div>
-                        <StatusPill status={n.readAt ? "READ" : "UNREAD"} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <Link href="/customer/notifications" className="mt-5 block">
-                <Button variant="outline" className="w-full">
-                  Open notifications
+                  Support & disputes
                 </Button>
               </Link>
             </CardContent>
           </Card>
         </div>
-      </div>
 
-      <div className="grid grid-cols-12 gap-4 mb-6">
-        <Card className="col-span-12 lg:col-span-8" id="orders">
-          <CardHeader className="p-4 sm:p-6 flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <div className="text-lg font-black text-gray-900">Orders</div>
-              <div className="text-sm text-gray-500 mt-1">Sortable & searchable</div>
+        <Card className="col-span-12 lg:col-span-8 overflow-hidden">
+          <div className="p-6 border-b border-gray-100/60 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div>
+              <div className="text-lg font-black text-gray-900">Recent orders</div>
+              <div className="text-sm text-gray-500 mt-1">Quick view of your latest purchases.</div>
             </div>
-            <Link href="/customer/orders" className="text-sm font-black text-primary-700 hover:text-primary-800">
-              View all
-            </Link>
-          </CardHeader>
-          <CardContent className="p-4 sm:p-6">
+            <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  value={orderQuery}
+                  onChange={(e) => setOrderQuery(e.target.value)}
+                  placeholder="Search order or tracking #"
+                  className="w-full sm:w-64 pl-10 pr-3 py-2.5 rounded-xl border border-gray-200/60 bg-gray-50 text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                />
+              </div>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full sm:w-48 rounded-xl border border-gray-200/60 bg-white px-3 py-2.5 text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+              >
+                <option value="all">All statuses</option>
+                {ordersByStatus.map((s) => (
+                  <option key={s.label} value={s.label.toLowerCase()}>
+                    {s.label} ({s.value})
+                  </option>
+                ))}
+              </select>
+              <Link href="/customer/orders">
+                <Button variant="outline" className="w-full sm:w-auto">
+                  View all
+                </Button>
+              </Link>
+            </div>
+          </div>
+          <CardContent className="p-6">
             {recentOrders.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-gray-200 bg-gray-50 p-10 text-center">
                 <div className="text-lg font-black text-gray-900">No orders yet</div>
@@ -703,52 +531,78 @@ export default function CustomerDashboardPage() {
                   <Button className="mt-6">Start shopping</Button>
                 </Link>
               </div>
+            ) : filteredRecentOrders.length === 0 ? (
+              <div className="rounded-3xl border border-dashed border-gray-200 bg-gray-50 p-10 text-center">
+                <div className="text-lg font-black text-gray-900">No matching orders</div>
+                <div className="text-sm text-gray-500 mt-2">Try adjusting search or status filter.</div>
+              </div>
             ) : (
-              <DataTable
-                rows={recentOrders}
-                columns={orderColumns}
-                getRowId={(o) => o.id}
-                initialSort={{ key: "id", dir: "desc" }}
-                searchPlaceholder="Search orders…"
-              />
+              <div className="overflow-auto">
+                <table className="min-w-[720px] w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr className="text-xs font-black uppercase tracking-widest text-gray-400">
+                      <th className="text-left py-3 px-4">Order</th>
+                      <th className="hidden lg:table-cell text-left py-3 px-4">Merchant</th>
+                      <th className="hidden xl:table-cell text-left py-3 px-4">Payment</th>
+                      <th className="hidden xl:table-cell text-left py-3 px-4">Tracking</th>
+                      <th className="text-left py-3 px-4">Status</th>
+                      <th className="text-right py-3 px-4">Amount</th>
+                      <th className="text-right py-3 px-4">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100/60">
+                    {filteredRecentOrders.map((o) => {
+                      const merchantName = getMerchantById(o.merchantId)?.businessName ?? o.merchantId;
+                      const lastEvent = o.tracking?.events?.[o.tracking.events.length - 1];
+                      const originalAmount = o.originalAmount ?? o.totalAmount ?? 0;
+                      const originalCurrency = (o.originalCurrency ?? defaultCurrency()) as CurrencyCode;
+                      const converted =
+                        ratesUsd && originalCurrency !== displayCurrency
+                          ? convertCurrency(originalAmount, originalCurrency, displayCurrency, ratesUsd).convertedAmount
+                          : null;
+                      return (
+                        <tr key={o.id} className="hover:bg-gray-50/60">
+                          <td className="py-4 px-4">
+                            <div className="font-black text-gray-900">{o.id}</div>
+                            <div className="text-xs text-gray-500 mt-1">{new Date(o.createdAt).toLocaleDateString()}</div>
+                          </td>
+                          <td className="hidden lg:table-cell py-4 px-4 text-gray-700">{merchantName}</td>
+                          <td className="hidden xl:table-cell py-4 px-4 text-gray-700">{o.paymentMethod}</td>
+                          <td className="hidden xl:table-cell py-4 px-4">
+                            <div className="text-gray-700">{o.tracking?.trackingNumber ?? "Pending"}</div>
+                            <div className="text-xs text-gray-500 mt-1">{lastEvent?.status ?? "—"}</div>
+                          </td>
+                          <td className="py-4 px-4">
+                            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-black ${statusBadge(o.status)}`}>
+                              {o.status}
+                            </span>
+                          </td>
+                          <td className="py-4 px-4 text-right">
+                            <div className="font-black text-gray-900">{formatCurrency(originalAmount, originalCurrency)}</div>
+                            {converted !== null ? <div className="text-[11px] font-semibold text-gray-500 mt-1">≈ {formatCurrency(converted, displayCurrency)}</div> : null}
+                          </td>
+                          <td className="py-4 px-4 text-right">
+                            <Link href={`/customer/orders/${o.id}`}>
+                              <Button size="sm" variant="outline" className="whitespace-nowrap">
+                                View details
+                              </Button>
+                            </Link>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           </CardContent>
         </Card>
 
-        <div className="col-span-12 lg:col-span-4 space-y-4">
-          <Card id="rfqs">
-            <CardHeader className="p-4 sm:p-6">
-              <div className="text-lg font-black text-gray-900">RFQs</div>
-              <div className="text-sm text-gray-500 mt-1">Recent requests (mock)</div>
-            </CardHeader>
-            <CardContent className="p-4 sm:p-6">
-              <DataTable
-                rows={rfqs}
-                getRowId={(r) => r.id}
-                searchPlaceholder="Search RFQs…"
-                initialSort={{ key: "id", dir: "desc" }}
-                columns={[
-                  { key: "id", header: "RFQ", sortable: true, value: (r: any) => r.id, render: (r: any) => <span className="font-black text-gray-900">{r.id}</span> },
-                  { key: "supplier", header: "Supplier", sortable: true, value: (r: any) => r.supplier, render: (r: any) => <span className="font-semibold text-gray-700">{r.supplier}</span> },
-                  { key: "category", header: "Category", sortable: true, value: (r: any) => r.category, render: (r: any) => <span className="text-gray-700">{r.category}</span> },
-                  { key: "status", header: "Status", sortable: true, value: (r: any) => r.status, render: (r: any) => <StatusPill status={r.status} /> },
-                ]}
-              />
-              <div className="mt-5 grid grid-cols-2 gap-2">
-                <Button variant="outline" onClick={() => window.alert("Mock: view RFQs")} className="w-full">
-                  View RFQs
-                </Button>
-                <Button onClick={() => window.alert("Mock: create RFQ")} className="w-full">
-                  New RFQ
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card id="tracking">
-            <CardHeader className="p-4 sm:p-6 flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <div className="text-lg font-black text-gray-900">Tracking</div>
+        <div className="col-span-12 lg:col-span-4 space-y-6">
+          <Card>
+            <div className="p-6 border-b border-gray-100/60 flex items-center justify-between gap-4">
+              <div>
+                <div className="text-lg font-black text-gray-900">Order tracking</div>
                 <div className="text-sm text-gray-500 mt-1">Latest active order progress.</div>
               </div>
               {trackingProgress?.order ? (
@@ -758,8 +612,8 @@ export default function CustomerDashboardPage() {
                   </Button>
                 </Link>
               ) : null}
-            </CardHeader>
-            <CardContent className="p-4 sm:p-6">
+            </div>
+            <CardContent className="p-6">
               {!trackingProgress?.order ? (
                 <div className="rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-3 text-sm text-gray-600">No active orders to track.</div>
               ) : (
@@ -857,35 +711,17 @@ export default function CustomerDashboardPage() {
             </CardContent>
           </Card>
         </div>
-      </div>
 
-      <div className="grid grid-cols-12 gap-4 mb-6">
         <Card className="col-span-12 lg:col-span-8">
-          <CardHeader className="p-4 sm:p-6">
-            <div className="text-lg font-black text-gray-900">Insights</div>
-            <div className="text-sm text-gray-500 mt-1">Category spend, delivery performance, and LC status.</div>
-          </CardHeader>
-          <CardContent className="p-4 sm:p-6 grid grid-cols-12 gap-4">
-            <div className="col-span-12 xl:col-span-6 rounded-3xl border border-gray-200/60 bg-white p-6">
-              <div className="text-sm font-black text-gray-900">Category spending</div>
-              <div className="text-sm text-gray-500 mt-1">{displayCurrency}</div>
-              <div className="mt-4 h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={categorySpending}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                    <XAxis dataKey="label" tick={{ fill: "#6b7280", fontSize: 12 }} interval={0} angle={-20} textAnchor="end" height={60} />
-                    <YAxis tick={{ fill: "#6b7280", fontSize: 12 }} />
-                    <Tooltip
-                      formatter={(v: any) => formatCurrency(Number(v) || 0, displayCurrency)}
-                      contentStyle={{ borderRadius: 12, borderColor: "#e5e7eb" }}
-                    />
-                    <Bar dataKey="value" fill="#0ea5e9" radius={[8, 8, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+          <div className="p-6 border-b border-gray-100/60 flex items-center justify-between gap-4">
+            <div>
+              <div className="text-lg font-black text-gray-900">Insights</div>
+              <div className="text-sm text-gray-500 mt-1">Category spend, delivery performance, and LC status.</div>
             </div>
-
-            <div className="col-span-12 xl:col-span-6 rounded-3xl border border-gray-200/60 bg-white p-6">
+          </div>
+          <CardContent className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <MiniBarChart title="Category spending" data={categorySpending} />
+            <div className="rounded-3xl border border-gray-200/60 bg-white p-6">
               <div className="text-sm font-black text-gray-900">Delivery performance</div>
               <div className="mt-4 grid grid-cols-3 gap-3">
                 <div className="rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-3">
@@ -901,7 +737,6 @@ export default function CustomerDashboardPage() {
                   <div className="mt-1 text-xl font-black text-red-900">{deliveryPerformance.late}</div>
                 </div>
               </div>
-
               <div className="mt-6 text-sm font-black text-gray-900">LC requests</div>
               <div className="mt-3 grid grid-cols-3 gap-3">
                 <div className="rounded-2xl border border-gray-200/60 bg-gray-50 px-4 py-3">
@@ -928,9 +763,9 @@ export default function CustomerDashboardPage() {
           </CardContent>
         </Card>
 
-        <div className="col-span-12 lg:col-span-4 space-y-4">
+        <div className="col-span-12 lg:col-span-4 space-y-6">
           <Card>
-            <CardContent className="p-4 sm:p-6">
+            <CardContent className="p-6">
               <div className="flex items-start gap-3">
                 <div className="w-11 h-11 rounded-2xl bg-gray-50 border border-gray-200/60 flex items-center justify-center text-gray-700">
                   <ShoppingBag className="w-5 h-5" />
